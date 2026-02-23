@@ -156,9 +156,9 @@ void app_render(App *app) {
     igBegin("##SidePanel", NULL, panel_flags);
     igSeparatorText("Panel");
 
-    igCheckbox("Map Generation", &app->show_map_gen);
-    igCheckbox("Player Status", &app->show_player_status);
-    igCheckbox("Minimap", &app->show_minimap);
+    igCheckbox("Show Map Generation", &app->show_map_gen);
+    igCheckbox("Show Player Status", &app->show_player_status);
+    igCheckbox("Show Minimap", &app->show_minimap);
 
     igSpacing();
 
@@ -198,6 +198,66 @@ void app_render(App *app) {
             igPopStyleColor(1);
 
             igText("Pos: (%.2f, %.2f)", player->pos.x, player->pos.y);
+        }
+    }
+
+    // -- Squad Status section --
+    if (app->show_player_status) {
+        if (igCollapsingHeader_TreeNodeFlags("Squad Status", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static const char *role_names[] = {
+                [ROLE_MELEE]  = "Melee",
+                [ROLE_ARCHER] = "Archer",
+                [ROLE_HEALER] = "Healer",
+                [ROLE_MAGE]   = "Mage",
+            };
+            GameState *gs = &app->game.state;
+            for (u32 i = 0; i < gs->num_squad; i++) {
+                Unit *u = &gs->squad[i];
+                if (!u->alive) continue;
+
+                const char *name = (u->role < ROLE_COUNT) ? role_names[u->role] : "???";
+                if (!name) name = "???";
+
+                igPushID_Int((int)i);
+
+                // Role name with colored bullet
+                ImVec4_c role_col = {
+                    u->color[0] / 255.0f,
+                    u->color[1] / 255.0f,
+                    u->color[2] / 255.0f,
+                    1.0f
+                };
+                igTextColored(role_col, "%s", name);
+
+                // HP bar
+                float hp_frac = u->hp / u->max_hp;
+                if (hp_frac < 0.0f) hp_frac = 0.0f;
+                if (hp_frac > 1.0f) hp_frac = 1.0f;
+
+                char hp_buf[32];
+                snprintf(hp_buf, sizeof(hp_buf), "%.0f / %.0f", u->hp, u->max_hp);
+                igPushStyleColor_Vec4(ImGuiCol_PlotHistogram,
+                    (ImVec4_c){0.2f + 0.8f * (1.0f - hp_frac), 0.8f * hp_frac, 0.0f, 1.0f});
+                igProgressBar(hp_frac, (ImVec2_c){-1, 0}, hp_buf);
+                igPopStyleColor(1);
+
+                // Cooldown bar
+                float cd_frac = 0.0f;
+                if (u->cooldown > 0.0f)
+                    cd_frac = 1.0f - (u->cooldown_timer / u->cooldown);
+                if (cd_frac < 0.0f) cd_frac = 0.0f;
+                if (cd_frac > 1.0f) cd_frac = 1.0f;
+
+                const char *cd_label = cd_frac >= 1.0f ? "Ready" : "Cooldown";
+                igPushStyleColor_Vec4(ImGuiCol_PlotHistogram,
+                    (ImVec4_c){0.2f, 0.5f, 0.9f, 1.0f});
+                igProgressBar(cd_frac, (ImVec2_c){-1, 0}, cd_label);
+                igPopStyleColor(1);
+
+                igPopID();
+
+                if (i < gs->num_squad - 1) igSpacing();
+            }
         }
     }
 

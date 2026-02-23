@@ -19,10 +19,72 @@ void g_game_init(Game *game, const MapGraph *graph) {
     game->state.terrain_ready = true;
 
     g_unit_init_player(&game->state.player, &game->terrain, graph);
+    g_unit_init_squad(&game->state, &game->terrain, graph);
 
     // Initialize camera centered on player
     game->state.camera.pos = game->state.player.pos;
     game->state.camera.zoom = 5.0f;
+}
+
+static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph, f32 dt) {
+    for (u32 i = 0; i < gs->num_squad; i++) {
+        Unit *u = &gs->squad[i];
+        if (!u->alive) continue;
+
+        Vec2 force = {0, 0};
+
+        // 1. Follow player — attenuate when within preferred_dist
+        Vec2 to_player = vec2_sub(gs->player.pos, u->pos);
+        f32 dist_to_player = vec2_len(to_player);
+        if (dist_to_player > 1e-3f) {
+            f32 follow_strength = u->weights.follow_player;
+            if (dist_to_player < u->weights.preferred_dist) {
+                follow_strength *= dist_to_player / u->weights.preferred_dist;
+            }
+            Vec2 follow = vec2_scale(vec2_normalize(to_player), follow_strength);
+            force = vec2_add(force, follow);
+        }
+
+        // 2. Separation from other squad members
+        Vec2 sep = {0, 0};
+        for (u32 j = 0; j < gs->num_squad; j++) {
+            if (j == i || !gs->squad[j].alive) continue;
+            Vec2 diff = vec2_sub(u->pos, gs->squad[j].pos);
+            f32 d = vec2_len(diff);
+            if (d < u->weights.separation_radius && d > 1e-6f) {
+                // Stronger repulsion when closer
+                sep = vec2_add(sep, vec2_scale(vec2_normalize(diff), 1.0f / d));
+            }
+        }
+        force = vec2_add(force, vec2_scale(sep, u->weights.separation));
+
+        // 3. Cohesion — steer toward squad centroid
+        Vec2 centroid = {0, 0};
+        u32 count = 0;
+        for (u32 j = 0; j < gs->num_squad; j++) {
+            if (j == i || !gs->squad[j].alive) continue;
+            centroid = vec2_add(centroid, gs->squad[j].pos);
+            count++;
+        }
+        if (count > 0) {
+            centroid = vec2_scale(centroid, 1.0f / (f32)count);
+            Vec2 to_centroid = vec2_sub(centroid, u->pos);
+            force = vec2_add(force, vec2_scale(to_centroid, u->weights.cohesion));
+        }
+
+        // Normalize and apply speed with terrain modifier (skip negligible forces)
+        f32 force_len = vec2_len(force);
+        if (force_len > 0.25f) {
+            Vec2 dir = vec2_scale(force, 1.0f / force_len);
+            f32 elev = g_terrain_get_elevation(tg, graph, u->pos);
+            f32 speed = u->speed * (1.0f - elev * gs->elevation_speed_factor);
+            if (speed < 0.01f) speed = 0.01f;
+
+            Vec2 new_pos = vec2_add(u->pos, vec2_scale(dir, speed * dt));
+            u->pos = g_unit_move_with_terrain(u->pos, new_pos, tg, graph,
+                                               gs->water_blocks_movement);
+        }
+    }
 }
 
 void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
@@ -49,30 +111,13 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
             if (speed < 0.01f) speed = 0.01f;
 
             Vec2 new_pos = vec2_add(gs->player.pos, vec2_scale(dir, speed * fdt));
-
-            // Clamp to map bounds
-            if (new_pos.x < 0.0f) new_pos.x = 0.0f;
-            if (new_pos.x > 1.0f) new_pos.x = 1.0f;
-            if (new_pos.y < 0.0f) new_pos.y = 0.0f;
-            if (new_pos.y > 1.0f) new_pos.y = 1.0f;
-
-            // Block movement into water
-            if (gs->water_blocks_movement && g_terrain_is_water(tg, graph, new_pos)) {
-                // Try sliding along axes
-                Vec2 try_x = {new_pos.x, gs->player.pos.y};
-                Vec2 try_y = {gs->player.pos.x, new_pos.y};
-
-                if (!g_terrain_is_water(tg, graph, try_x))
-                    new_pos = try_x;
-                else if (!g_terrain_is_water(tg, graph, try_y))
-                    new_pos = try_y;
-                else
-                    new_pos = gs->player.pos; // fully blocked
-            }
-
-            gs->player.pos = new_pos;
+            gs->player.pos = g_unit_move_with_terrain(gs->player.pos, new_pos,
+                                                       tg, graph, gs->water_blocks_movement);
         }
     }
+
+    // Update squad boid steering
+    update_squad(gs, tg, graph, fdt);
 
     // Smooth camera follow (lerp toward player)
     f32 lerp_speed = 5.0f;

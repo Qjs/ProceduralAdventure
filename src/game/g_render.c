@@ -40,7 +40,13 @@ static void draw_health_bar(SDL_Renderer *renderer, const Unit *u, SDL_FRect map
 }
 
 void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect) {
-    // Player
+    // Squad companions
+    for (u32 i = 0; i < gs->num_squad; i++) {
+        draw_unit(renderer, &gs->squad[i], map_rect);
+        draw_health_bar(renderer, &gs->squad[i], map_rect);
+    }
+
+    // Player (drawn last, on top)
     draw_unit(renderer, &gs->player, map_rect);
     draw_health_bar(renderer, &gs->player, map_rect);
 }
