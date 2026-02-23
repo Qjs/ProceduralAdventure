@@ -12,16 +12,16 @@
 void mg_map_init(Map *map) {
     memset(map, 0, sizeof(*map));
     map->params = (MapParams){
-        .seed           = 42,
-        .site_count     = 4000,
+        .seed           = 420,
+        .site_count     = 16000,
         .raster_w       = 1024,
         .raster_h       = 1024,
         .noise_freq     = 3.0f,
         .noise_octaves  = 6,
-        .noise_gain     = 0.5f,
-        .radial_falloff = 1.0f,
+        .noise_gain     = 0.35f,
+        .radial_falloff = 0.40f,
         .radial_power   = 2.0f,
-        .land_threshold = 0.05f,
+        .land_threshold = 0.45f,
         .elevation_gamma = 0.8f,
         .snow_threshold  = 0.75f,
     };

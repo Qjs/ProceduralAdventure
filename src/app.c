@@ -1,6 +1,10 @@
 #include "app.h"
 #include "mapgen/mg_raster.h"
 
+static f64 get_time_seconds(void) {
+    return (f64)SDL_GetPerformanceCounter() / (f64)SDL_GetPerformanceFrequency();
+}
+
 bool app_init(App *app, const char *title, int w, int h) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -36,10 +40,18 @@ bool app_init(App *app, const char *title, int w, int h) {
     app->map_texture = NULL;
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
 
+    // Initialize game state
+    g_game_init(&app->game, &app->map.graph);
+
+    // Initialize timing
+    app->last_time = get_time_seconds();
+    app->dt = 0.0;
+
     return true;
 }
 
 void app_shutdown(App *app) {
+    g_game_shutdown(&app->game);
     if (app->map_texture) SDL_DestroyTexture(app->map_texture);
     mg_map_free(&app->map);
     ImGui_SDL3_Shutdown();
@@ -59,7 +71,13 @@ void app_process_events(App *app) {
 }
 
 void app_update(App *app) {
-    (void)app;
+    // Compute delta time
+    f64 now = get_time_seconds();
+    app->dt = now - app->last_time;
+    app->last_time = now;
+    if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
+
+    g_game_update(&app->game, &app->map.graph, app->dt);
 }
 
 void app_render(App *app) {
@@ -69,28 +87,33 @@ void app_render(App *app) {
         app->bg[0], app->bg[1], app->bg[2], app->bg[3]);
     SDL_RenderClear(app->renderer);
 
-    // Draw map texture (fit to window, centered)
+    // Compute map rect (fit to window, centered)
+    SDL_FRect map_rect = {0};
     if (app->map_texture) {
         int win_w, win_h;
         SDL_GetWindowSize(app->window, &win_w, &win_h);
         float map_size = (float)(win_w < win_h ? win_w : win_h);
-        SDL_FRect dst = {
+        map_rect = (SDL_FRect){
             ((float)win_w - map_size) * 0.5f,
             ((float)win_h - map_size) * 0.5f,
             map_size, map_size
         };
-        SDL_RenderTexture(app->renderer, app->map_texture, NULL, &dst);
+        SDL_RenderTexture(app->renderer, app->map_texture, NULL, &map_rect);
     }
+
+    // Game rendering (on top of map)
+    g_game_render(&app->game, app->renderer, map_rect);
 
     // ImGui panel
     if (mg_map_imgui_panel(&app->map)) {
         mg_map_generate(&app->map);
-        // Destroy old texture if raster size changed
         if (app->map_texture) {
             SDL_DestroyTexture(app->map_texture);
             app->map_texture = NULL;
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
+        // Reset game state on map regeneration
+        g_game_init(&app->game, &app->map.graph);
     }
 
     ImGui_SDL3_Render(app->renderer);

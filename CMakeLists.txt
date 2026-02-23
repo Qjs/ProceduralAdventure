@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SDL3Starter C)
+project(ProceduralAdventure C)
 enable_language(CXX)
 
 set(CMAKE_C_STANDARD 17)
@@ -42,7 +42,7 @@ add_library(delaunator STATIC
 target_include_directories(delaunator PUBLIC lib/delaunator-c)
 
 # SDL3Starter executable
-add_executable(SDL3Starter
+add_executable(ProceduralAdventure
     src/main.c
     src/imgui_sdl3.cpp
     src/app.c
@@ -53,14 +53,16 @@ add_executable(SDL3Starter
     src/mapgen/mg_elevation.c
     src/mapgen/mg_raster.c
     src/mapgen/mg_map.c
+    src/game/g_game.c
+    src/game/g_terrain.c
 )
 
-target_include_directories(SDL3Starter PRIVATE
+target_include_directories(ProceduralAdventure PRIVATE
     src
     lib/stb
     lib/delaunator-c
 )
-target_link_libraries(SDL3Starter PRIVATE
+target_link_libraries(ProceduralAdventure PRIVATE
     SDL3::SDL3-static
     cimgui
     delaunator

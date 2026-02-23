@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include "imgui_sdl3.h"
 #include "mapgen/mg_map.h"
+#include "game/g_game.h"
 
 typedef struct {
     SDL_Window   *window;
@@ -13,6 +14,9 @@ typedef struct {
     float         bg[4]; // RGBA clear color
     Map           map;
     SDL_Texture  *map_texture;
+    Game          game;
+    f64           last_time;  // seconds (perf counter)
+    f64           dt;         // delta time for current frame
 } App;
 
 // Lifecycle

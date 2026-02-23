@@ -20,12 +20,12 @@ int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
 #ifdef __EMSCRIPTEN__
-    if (!app_init(&app, "SDL3Starter", 1280, 720))
+    if (!app_init(&app, "ProceduralAdventure", 1280, 720))
         return 1;
     emscripten_set_main_loop(main_loop, 0, 1);
 #else
     App app;
-    if (!app_init(&app, "SDL3Starter", 1280, 720))
+    if (!app_init(&app, "ProceduralAdventure", 1280, 720))
         return 1;
 
     while (app.running) {
