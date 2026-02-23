@@ -16,4 +16,7 @@ void mg_map_free(Map *map);
 // Draw ImGui controls panel. Returns true if Regenerate was pressed.
 bool mg_map_imgui_panel(Map *map);
 
+// Draw just the map gen controls (no window). For embedding in another panel.
+bool mg_map_imgui_controls(Map *map);
+
 #endif

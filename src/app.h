@@ -17,6 +17,11 @@ typedef struct {
     Game          game;
     f64           last_time;  // seconds (perf counter)
     f64           dt;         // delta time for current frame
+
+    // UI toggle state
+    bool          show_map_gen;
+    bool          show_player_status;
+    bool          show_minimap;
 } App;
 
 // Lifecycle

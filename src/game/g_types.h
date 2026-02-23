@@ -108,6 +108,11 @@ typedef struct {
 } EnemyCamp;
 
 typedef struct {
+    Vec2 pos;
+    f32  zoom;
+} Camera;
+
+typedef struct {
     Unit        player;
     Unit        squad[MAX_SQUAD];
     u32         num_squad;
@@ -120,6 +125,7 @@ typedef struct {
     f32         elevation_speed_factor;
     bool        water_blocks_movement;
     bool        terrain_ready;
+    Camera      camera;
 } GameState;
 
 #endif

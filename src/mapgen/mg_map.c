@@ -62,11 +62,9 @@ void mg_map_free(Map *map) {
     map->pixels = NULL;
 }
 
-bool mg_map_imgui_panel(Map *map) {
+bool mg_map_imgui_controls(Map *map) {
     bool regenerate = false;
     MapParams *p = &map->params;
-
-    igBegin("Map Controls", NULL, 0);
 
     int seed_i = (int)p->seed;
     if (igSliderInt("Seed", &seed_i, 0, 1000, "%d", 0))
@@ -96,6 +94,12 @@ bool mg_map_imgui_panel(Map *map) {
     if (igButton("Regenerate", (ImVec2_c){0, 0}))
         regenerate = true;
 
-    igEnd();
     return regenerate;
+}
+
+bool mg_map_imgui_panel(Map *map) {
+    igBegin("Map Controls", NULL, 0);
+    bool result = mg_map_imgui_controls(map);
+    igEnd();
+    return result;
 }
