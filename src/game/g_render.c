@@ -1,4 +1,5 @@
 #include "g_render.h"
+#include "g_particles.h"
 #include <math.h>
 
 #define CIRCLE_SEGMENTS 24
@@ -381,6 +382,9 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
     for (u32 i = 0; i < gs->num_projectiles; i++) {
         draw_projectile(renderer, &gs->projectiles[i], map_rect);
     }
+
+    // Particles (after projectiles, before units on top)
+    g_particles_render(&gs->particles, renderer, map_rect);
 
     // Squad companions
     for (u32 i = 0; i < gs->num_squad; i++) {

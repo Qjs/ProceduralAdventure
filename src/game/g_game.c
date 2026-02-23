@@ -4,6 +4,7 @@
 #include "g_render.h"
 #include "g_enemy.h"
 #include "g_combat.h"
+#include "g_particles.h"
 #include <stdlib.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
@@ -295,6 +296,7 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     g_combat_update_squad_states(gs);
     g_combat_update(gs, tg, graph, fdt);
     g_combat_update_projectiles(gs, fdt);
+    g_particles_update(&gs->particles, fdt);
 
     // Orb collection
     for (u32 i = 0; i < gs->num_orbs; i++) {

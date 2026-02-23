@@ -1,6 +1,7 @@
 #include "g_combat.h"
 #include "g_unit.h"
 #include "g_terrain.h"
+#include "g_particles.h"
 
 void g_combat_deal_damage(Unit *target, f32 damage) {
     if (!target->alive) return;
@@ -14,7 +15,7 @@ void g_combat_deal_damage(Unit *target, f32 damage) {
 
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
                                 f32 damage, Team source_team, const u8 color[4],
-                                bool applies_slow) {
+                                bool applies_slow, bool is_arrow) {
     if (gs->num_projectiles >= MAX_PROJECTILES) return;
 
     Projectile *p = &gs->projectiles[gs->num_projectiles++];
@@ -28,9 +29,10 @@ void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
     p->color[2] = color[2];
     p->color[3] = color[3];
     p->applies_slow = applies_slow;
+    p->is_arrow = is_arrow;
 
     Vec2 dir = vec2_normalize(vec2_sub(to, from));
-    f32 speed = 0.2f;
+    f32 speed = is_arrow ? 0.30f : 0.2f;
     p->vel = vec2_scale(dir, speed);
 }
 
@@ -71,6 +73,7 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
             best->hp += u->damage; // healer "damage" is heal amount
             if (best->hp > best->max_hp) best->hp = best->max_hp;
             u->cooldown_timer = u->cooldown;
+            g_particles_heal(&gs->particles, best->pos);
         }
         return;
     }
@@ -114,7 +117,9 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
     if (u->role == ROLE_ARCHER || u->role == ROLE_MAGE || u->role == ROLE_ENEMY_RANGED) {
         f32 dmg = u->damage;
         bool slow = false;
-        const u8 *proj_color = u->color;
+        bool arrow = (u->role == ROLE_ARCHER || u->role == ROLE_ENEMY_RANGED);
+        static const u8 arrow_color[4] = {180, 180, 180, 255};
+        const u8 *proj_color = arrow ? arrow_color : u->color;
 
         if (u->role == ROLE_MAGE && u->team == TEAM_PLAYER) {
             static const u8 fire_color[4]   = {255, 80, 20, 255};
@@ -128,11 +133,17 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
             }
         }
 
-        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow);
+        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow, arrow);
     } else {
+        // Melee hit
+        static const u8 spark_color[4] = {220, 220, 230, 255};
+        g_particles_slash(&gs->particles, target->pos, u->facing, spark_color);
         g_combat_deal_damage(target, u->damage);
-        if (u->team == TEAM_PLAYER && !target->alive)
-            gs->enemies_killed++;
+        if (!target->alive) {
+            g_particles_burst(&gs->particles, target->pos, 12, target->color);
+            if (u->team == TEAM_PLAYER)
+                gs->enemies_killed++;
+        }
     }
 }
 
@@ -159,6 +170,10 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
         p->lifetime -= dt;
         p->pos = vec2_add(p->pos, vec2_scale(p->vel, dt));
 
+        // Mage bolt trail (skip for arrows)
+        if (!p->is_arrow)
+            g_particles_trail(&gs->particles, p->pos, p->color);
+
         // Out of bounds or expired
         if (p->lifetime <= 0.0f ||
             p->pos.x < 0.0f || p->pos.x > 1.0f ||
@@ -181,7 +196,10 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 if (!enemy->alive) continue;
                 if (vec2_dist(p->pos, enemy->pos) < hit_radius + enemy->radius) {
                     g_combat_deal_damage(enemy, p->damage);
-                    if (!enemy->alive) gs->enemies_killed++;
+                    if (!enemy->alive) {
+                        gs->enemies_killed++;
+                        g_particles_burst(&gs->particles, enemy->pos, 12, enemy->color);
+                    }
                     if (p->applies_slow) enemy->slow_timer = 2.0f;
                     hit = true;
                     break;
@@ -211,6 +229,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
         }
 
         if (hit) {
+            g_particles_burst(&gs->particles, p->pos, 6, p->color);
             p->active = false;
             gs->projectiles[i] = gs->projectiles[gs->num_projectiles - 1];
             gs->num_projectiles--;

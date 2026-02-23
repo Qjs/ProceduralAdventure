@@ -3,6 +3,7 @@
 
 #include "../utils/q_util.h"
 #include "../mapgen/mg_types.h"
+#include "g_particles.h"
 #include <SDL3/SDL.h>
 #include <math.h>
 
@@ -118,6 +119,7 @@ typedef struct {
     Team  source_team;
     u8    color[4];
     bool  applies_slow;  // mage defensive freeze projectile
+    bool  is_arrow;      // archer projectile (faster, no trail)
 } Projectile;
 
 typedef struct {
@@ -172,6 +174,7 @@ typedef struct {
     bool        level_complete;
     SquadStance squad_stance;
     u32         enemies_killed;
+    ParticleSystem particles;
     SDL_Texture *role_textures[ROLE_COUNT];
 } GameState;
 

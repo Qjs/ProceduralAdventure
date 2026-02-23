@@ -16,7 +16,7 @@ void g_combat_deal_damage(Unit *target, f32 damage);
 // Spawn a straight-line projectile
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
                                 f32 damage, Team source_team, const u8 color[4],
-                                bool applies_slow);
+                                bool applies_slow, bool is_arrow);
 
 // Update squad state machine (FOLLOW/ATTACK/RETREAT/HEAL transitions)
 void g_combat_update_squad_states(GameState *gs);
