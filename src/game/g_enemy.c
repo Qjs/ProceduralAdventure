@@ -18,14 +18,31 @@ void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *g
     u32 candidates[512];
     u32 num_candidates = 0;
 
+    // Camps spawn in the rocky/mountain transition zone (foothills).
+    // A cell qualifies if it's land, in the upper-mid elevation band,
+    // and has at least one neighbor at lower elevation (edge of highlands).
+    f32 rocky_lo = 0.35f;  // lower bound — mid-green/brown
+    f32 rocky_hi = 0.70f;  // upper bound — below snow line
+
     for (u32 i = 0; i < graph->num_centers && num_candidates < 512; i++) {
         const Center *c = &graph->centers[i];
         if (c->water || c->border) continue;
-        if (c->elevation < 0.15f || c->elevation > 0.6f) continue;
+        if (c->elevation < rocky_lo || c->elevation > rocky_hi) continue;
+
+        // Must neighbor a lower-elevation cell (camp sits on highland edge)
+        bool near_low = false;
+        for (u32 n = 0; n < c->num_neighbors; n++) {
+            if (graph->centers[c->neighbors[n]].elevation < rocky_lo &&
+                !graph->centers[c->neighbors[n]].water) {
+                near_low = true;
+                break;
+            }
+        }
+        if (!near_low) continue;
 
         // Min spacing from player spawn (map center)
         f32 dist_center = vec2_dist(c->pos, (Vec2){0.5f, 0.5f});
-        if (dist_center < 0.15f) continue;
+        if (dist_center < 0.12f) continue;
 
         candidates[num_candidates++] = i;
     }
@@ -134,7 +151,12 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
     // Enemy AI tick
     for (u32 i = 0; i < gs->num_enemies; i++) {
         Unit *e = &gs->enemies[i];
-        if (!e->alive || e->state == STATE_IDLE || e->state == STATE_DEAD) continue;
+        if (!e->alive || e->state == STATE_DEAD) continue;
+
+        // Tick slow timer
+        if (e->slow_timer > 0.0f) e->slow_timer -= dt;
+
+        if (e->state == STATE_IDLE) continue;
 
         // Find nearest player-team unit
         u32 target = g_unit_find_nearest_enemy(gs, e);
@@ -181,6 +203,7 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
         Vec2 dir = vec2_normalize(vec2_sub(move_target, e->pos));
         f32 elev = g_terrain_get_elevation(tg, graph, e->pos);
         f32 speed = e->speed * (1.0f - elev * 0.5f);
+        if (e->slow_timer > 0.0f) speed *= 0.5f;
         if (speed < 0.01f) speed = 0.01f;
 
         Vec2 new_pos = vec2_add(e->pos, vec2_scale(dir, speed * dt));

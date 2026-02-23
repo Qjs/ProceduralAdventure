@@ -56,6 +56,12 @@ typedef enum {
     TEAM_ENEMY
 } Team;
 
+typedef enum {
+    STANCE_AGGRESSIVE,
+    STANCE_DEFENSIVE,
+    STANCE_PASSIVE
+} SquadStance;
+
 /* ---- Structs ---- */
 
 typedef struct {
@@ -87,6 +93,8 @@ typedef struct {
     u32       target_id;
     u8        color[4]; // RGBA
     BoidWeights weights;
+    f32       slow_timer;         // while >0, speed halved (freeze)
+    f32       speed_boost_timer;  // while >0, speed 1.5x (mage buff)
 } Unit;
 
 typedef struct {
@@ -97,6 +105,7 @@ typedef struct {
     f32   lifetime;
     Team  source_team;
     u8    color[4];
+    bool  applies_slow;  // mage defensive freeze projectile
 } Projectile;
 
 typedef struct {
@@ -149,6 +158,7 @@ typedef struct {
     u32         orbs_collected;
     Portal      portal;
     bool        level_complete;
+    SquadStance squad_stance;
 } GameState;
 
 #endif

@@ -1,5 +1,6 @@
 #include "g_combat.h"
 #include "g_unit.h"
+#include "g_terrain.h"
 
 void g_combat_deal_damage(Unit *target, f32 damage) {
     if (!target->alive) return;
@@ -12,7 +13,8 @@ void g_combat_deal_damage(Unit *target, f32 damage) {
 }
 
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
-                                f32 damage, Team source_team, const u8 color[4]) {
+                                f32 damage, Team source_team, const u8 color[4],
+                                bool applies_slow) {
     if (gs->num_projectiles >= MAX_PROJECTILES) return;
 
     Projectile *p = &gs->projectiles[gs->num_projectiles++];
@@ -25,13 +27,15 @@ void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
     p->color[1] = color[1];
     p->color[2] = color[2];
     p->color[3] = color[3];
+    p->applies_slow = applies_slow;
 
     Vec2 dir = vec2_normalize(vec2_sub(to, from));
     f32 speed = 0.2f;
     p->vel = vec2_scale(dir, speed);
 }
 
-static void process_unit_attack(GameState *gs, Unit *u, f32 dt) {
+static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
+                                const MapGraph *graph, Unit *u, f32 dt) {
     if (!u->alive || u->state == STATE_DEAD || u->state == STATE_IDLE) return;
 
     u->cooldown_timer -= dt;
@@ -71,6 +75,34 @@ static void process_unit_attack(GameState *gs, Unit *u, f32 dt) {
         return;
     }
 
+    // Mage passive stance: buff nearest ally speed instead of attacking
+    if (u->role == ROLE_MAGE && u->team == TEAM_PLAYER &&
+        gs->squad_stance == STANCE_PASSIVE) {
+        Unit *nearest = NULL;
+        f32 best_dist = 1e9f;
+        for (u32 i = 0; i < gs->num_squad; i++) {
+            Unit *ally = &gs->squad[i];
+            if (!ally->alive || ally == u) continue;
+            f32 d = vec2_dist(u->pos, ally->pos);
+            if (d < best_dist) {
+                best_dist = d;
+                nearest = ally;
+            }
+        }
+        // Also consider the player
+        if (gs->player.alive) {
+            f32 d = vec2_dist(u->pos, gs->player.pos);
+            if (d < best_dist) {
+                nearest = &gs->player;
+            }
+        }
+        if (nearest) {
+            nearest->speed_boost_timer = 3.0f;
+            u->cooldown_timer = u->cooldown;
+        }
+        return;
+    }
+
     // Find target
     u32 target_idx = g_unit_find_nearest_enemy(gs, u);
     if (target_idx == UINT32_MAX) return;
@@ -94,31 +126,54 @@ static void process_unit_attack(GameState *gs, Unit *u, f32 dt) {
 
     if (!target->alive) return;
 
+    // Archer elevation range bonus
+    f32 effective_range = u->attack_range;
+    if (u->role == ROLE_ARCHER) {
+        f32 elev = g_terrain_get_elevation(tg, graph, u->pos);
+        effective_range = u->attack_range * (1.0f + elev * 0.5f);
+    }
+
     f32 dist = vec2_dist(u->pos, target_pos);
-    if (dist > u->attack_range) return;
+    if (dist > effective_range) return;
 
     // Attack!
     u->cooldown_timer = u->cooldown;
 
     if (u->role == ROLE_ARCHER || u->role == ROLE_MAGE || u->role == ROLE_ENEMY_RANGED) {
-        g_combat_spawn_projectile(gs, u->pos, target_pos, u->damage, u->team, u->color);
+        f32 dmg = u->damage;
+        bool slow = false;
+        const u8 *proj_color = u->color;
+
+        if (u->role == ROLE_MAGE && u->team == TEAM_PLAYER) {
+            static const u8 fire_color[4]   = {255, 80, 20, 255};
+            static const u8 freeze_color[4] = {80, 180, 255, 255};
+            if (gs->squad_stance == STANCE_AGGRESSIVE) {
+                dmg *= 1.5f;
+                proj_color = fire_color;
+            } else if (gs->squad_stance == STANCE_DEFENSIVE) {
+                slow = true;
+                proj_color = freeze_color;
+            }
+        }
+
+        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow);
     } else {
         g_combat_deal_damage(target, u->damage);
     }
 }
 
-void g_combat_update(GameState *gs, f32 dt) {
+void g_combat_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph, f32 dt) {
     // Player attacks
-    process_unit_attack(gs, &gs->player, dt);
+    process_unit_attack(gs, tg, graph, &gs->player, dt);
 
     // Squad attacks
     for (u32 i = 0; i < gs->num_squad; i++) {
-        process_unit_attack(gs, &gs->squad[i], dt);
+        process_unit_attack(gs, tg, graph, &gs->squad[i], dt);
     }
 
     // Enemy attacks
     for (u32 i = 0; i < gs->num_enemies; i++) {
-        process_unit_attack(gs, &gs->enemies[i], dt);
+        process_unit_attack(gs, tg, graph, &gs->enemies[i], dt);
     }
 }
 
@@ -152,6 +207,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 if (!enemy->alive) continue;
                 if (vec2_dist(p->pos, enemy->pos) < hit_radius + enemy->radius) {
                     g_combat_deal_damage(enemy, p->damage);
+                    if (p->applies_slow) enemy->slow_timer = 2.0f;
                     hit = true;
                     break;
                 }
@@ -161,6 +217,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
             if (gs->player.alive &&
                 vec2_dist(p->pos, gs->player.pos) < hit_radius + gs->player.radius) {
                 g_combat_deal_damage(&gs->player, p->damage);
+                if (p->applies_slow) gs->player.slow_timer = 2.0f;
                 hit = true;
             }
             // Check squad
@@ -170,6 +227,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                     if (!ally->alive) continue;
                     if (vec2_dist(p->pos, ally->pos) < hit_radius + ally->radius) {
                         g_combat_deal_damage(ally, p->damage);
+                        if (p->applies_slow) ally->slow_timer = 2.0f;
                         hit = true;
                         break;
                     }
@@ -189,11 +247,59 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
 }
 
 void g_combat_update_squad_states(GameState *gs) {
-    f32 detect_range = 0.08f;
+    // Stance-dependent thresholds
+    f32 detect_range, retreat_hp, recover_hp;
+    switch (gs->squad_stance) {
+        case STANCE_AGGRESSIVE:
+            detect_range = 0.12f;
+            retreat_hp   = 0.15f;
+            recover_hp   = 0.4f;
+            break;
+        case STANCE_DEFENSIVE:
+        default:
+            detect_range = 0.08f;
+            retreat_hp   = 0.25f;
+            recover_hp   = 0.5f;
+            break;
+        case STANCE_PASSIVE:
+            detect_range = 0.0f;
+            retreat_hp   = 0.0f;
+            recover_hp   = 0.0f;
+            break;
+    }
 
     for (u32 i = 0; i < gs->num_squad; i++) {
         Unit *u = &gs->squad[i];
         if (!u->alive) continue;
+
+        // Passive: force follow (healers can still heal)
+        if (gs->squad_stance == STANCE_PASSIVE) {
+            if (u->role == ROLE_HEALER) {
+                bool ally_hurt = false;
+                if (gs->player.alive && gs->player.hp < gs->player.max_hp)
+                    ally_hurt = true;
+                for (u32 j = 0; j < gs->num_squad && !ally_hurt; j++) {
+                    if (!gs->squad[j].alive) continue;
+                    if (gs->squad[j].hp < gs->squad[j].max_hp)
+                        ally_hurt = true;
+                }
+                bool all_full = true;
+                if (gs->player.alive && gs->player.hp < gs->player.max_hp)
+                    all_full = false;
+                for (u32 j = 0; j < gs->num_squad && all_full; j++) {
+                    if (!gs->squad[j].alive) continue;
+                    if (gs->squad[j].hp < gs->squad[j].max_hp)
+                        all_full = false;
+                }
+                if (ally_hurt)
+                    u->state = STATE_HEAL;
+                else if (all_full)
+                    u->state = STATE_FOLLOW;
+            } else {
+                u->state = STATE_FOLLOW;
+            }
+            continue;
+        }
 
         f32 hp_frac = u->hp / u->max_hp;
 
@@ -247,14 +353,14 @@ void g_combat_update_squad_states(GameState *gs) {
                 break;
 
             case STATE_ATTACK:
-                if (hp_frac < 0.25f)
+                if (hp_frac < retreat_hp)
                     u->state = STATE_RETREAT;
                 else if (!enemy_nearby)
                     u->state = STATE_FOLLOW;
                 break;
 
             case STATE_RETREAT:
-                if (hp_frac > 0.5f || !enemy_nearby)
+                if (hp_frac > recover_hp || !enemy_nearby)
                     u->state = STATE_FOLLOW;
                 break;
 

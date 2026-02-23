@@ -26,6 +26,7 @@ void g_game_init(Game *game, const MapGraph *graph) {
     game->state = (GameState){0};
     game->state.elevation_speed_factor = 0.5f;
     game->state.water_blocks_movement = true;
+    game->state.squad_stance = STANCE_DEFENSIVE;
 
     g_terrain_build_grid(&game->terrain, graph);
     game->state.terrain_ready = true;
@@ -86,6 +87,26 @@ static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *g
     for (u32 i = 0; i < gs->num_squad; i++) {
         Unit *u = &gs->squad[i];
         if (!u->alive) continue;
+
+        // Override boid weights based on stance
+        switch (gs->squad_stance) {
+            case STANCE_AGGRESSIVE:
+                u->weights.follow_player = 0.5f;
+                u->weights.preferred_dist = 0.15f;
+                break;
+            case STANCE_DEFENSIVE:
+                u->weights.follow_player = 1.0f;
+                u->weights.preferred_dist = 0.10f;
+                break;
+            case STANCE_PASSIVE:
+                u->weights.follow_player = 1.2f;
+                u->weights.preferred_dist = 0.06f;
+                break;
+        }
+
+        // Tick status timers
+        if (u->slow_timer > 0.0f) u->slow_timer -= dt;
+        if (u->speed_boost_timer > 0.0f) u->speed_boost_timer -= dt;
 
         Vec2 force = {0, 0};
 
@@ -169,6 +190,8 @@ static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *g
             Vec2 dir = vec2_scale(force, 1.0f / force_len);
             f32 elev = g_terrain_get_elevation(tg, graph, u->pos);
             f32 speed = u->speed * (1.0f - elev * gs->elevation_speed_factor);
+            if (u->slow_timer > 0.0f) speed *= 0.5f;
+            if (u->speed_boost_timer > 0.0f) speed *= 1.5f;
             if (speed < 0.01f) speed = 0.01f;
 
             Vec2 new_pos = vec2_add(u->pos, vec2_scale(dir, speed * dt));
@@ -183,6 +206,10 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     TerrainGrid *tg = &game->terrain;
     f32 fdt = (f32)dt;
 
+    // Tick player status timers
+    if (gs->player.slow_timer > 0.0f) gs->player.slow_timer -= fdt;
+    if (gs->player.speed_boost_timer > 0.0f) gs->player.speed_boost_timer -= fdt;
+
     // Skip input if ImGui wants keyboard
     ImGuiIO *io = igGetIO_Nil();
     if (!io->WantCaptureKeyboard) {
@@ -193,12 +220,19 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
         if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])  dir.x -= 1.0f;
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) dir.x += 1.0f;
 
+        // Stance hotkeys
+        if (keys[SDL_SCANCODE_1]) gs->squad_stance = STANCE_AGGRESSIVE;
+        if (keys[SDL_SCANCODE_2]) gs->squad_stance = STANCE_DEFENSIVE;
+        if (keys[SDL_SCANCODE_3]) gs->squad_stance = STANCE_PASSIVE;
+
         if (vec2_len(dir) > 0.0f) {
             dir = vec2_normalize(dir);
 
             // Terrain speed modifier
             f32 elev = g_terrain_get_elevation(tg, graph, gs->player.pos);
             f32 speed = gs->player.speed * (1.0f - elev * gs->elevation_speed_factor);
+            if (gs->player.slow_timer > 0.0f) speed *= 0.5f;
+            if (gs->player.speed_boost_timer > 0.0f) speed *= 1.5f;
             if (speed < 0.01f) speed = 0.01f;
 
             Vec2 new_pos = vec2_add(gs->player.pos, vec2_scale(dir, speed * fdt));
@@ -213,7 +247,7 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     // Enemy AI + combat
     g_enemy_update(gs, tg, graph, fdt);
     g_combat_update_squad_states(gs);
-    g_combat_update(gs, fdt);
+    g_combat_update(gs, tg, graph, fdt);
     g_combat_update_projectiles(gs, fdt);
 
     // Orb collection

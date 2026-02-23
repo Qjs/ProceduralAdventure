@@ -218,6 +218,15 @@ void app_render(App *app) {
     // -- Squad Status section --
     if (app->show_player_status) {
         if (igCollapsingHeader_TreeNodeFlags("Squad Status", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static const char *stance_names[] = {
+                [STANCE_AGGRESSIVE] = "Aggressive",
+                [STANCE_DEFENSIVE]  = "Defensive",
+                [STANCE_PASSIVE]    = "Passive",
+            };
+            const char *stance = stance_names[app->game.state.squad_stance];
+            igText("Stance: %s  [1/2/3]", stance);
+            igSpacing();
+
             static const char *role_names[] = {
                 [ROLE_MELEE]  = "Melee",
                 [ROLE_ARCHER] = "Archer",
@@ -316,6 +325,16 @@ void app_render(App *app) {
                 ImVec2_c e_max = {ex + 1.5f, ey + 1.5f};
                 ImDrawList_AddRectFilled(dl, e_min, e_max,
                                          0xFF2020CC, 0.0f, 0);
+            }
+
+            // Portal dot (purple, pulsing)
+            if (gs->portal.active) {
+                float ptx = cursor.x + gs->portal.pos.x * mm_size;
+                float pty = cursor.y + gs->portal.pos.y * mm_size;
+                ImVec2_c pt_min = {ptx - 3, pty - 3};
+                ImVec2_c pt_max = {ptx + 3, pty + 3};
+                ImDrawList_AddRectFilled(dl, pt_min, pt_max,
+                                         0xFFF050AA, 0.0f, 0);
             }
 
             // Player dot
