@@ -8,6 +8,13 @@
 #include "game/g_game.h"
 
 typedef struct {
+    u32 xp;                         // unspent XP pool
+    u32 total_xp;                   // lifetime earned (for display)
+    u32 stat_levels[MAX_SQUAD][4];  // [unit][stat] upgrade counts
+    // stat indices: 0=HP, 1=Damage, 2=Range, 3=Cooldown
+} Progression;
+
+typedef struct {
     SDL_Window   *window;
     SDL_Renderer *renderer;
     bool          running;
@@ -18,6 +25,8 @@ typedef struct {
     f64           last_time;  // seconds (perf counter)
     f64           dt;         // delta time for current frame
     u32           level;
+    Progression   progression;
+    bool          upgrading;
 
     // UI toggle state
     bool          show_map_gen;

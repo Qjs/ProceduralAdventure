@@ -40,9 +40,9 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
 
     u->cooldown_timer -= dt;
     if (u->cooldown_timer < 0.0f) u->cooldown_timer = 0.0f;
+    if (u->cooldown_timer > 0.0f) return;
 
     if (u->state != STATE_ATTACK && u->state != STATE_HEAL) return;
-    if (u->cooldown_timer > 0.0f) return;
 
     // Healer logic
     if (u->role == ROLE_HEALER && u->state == STATE_HEAL) {
@@ -70,34 +70,6 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         if (best && best_frac < 1.0f) {
             best->hp += u->damage; // healer "damage" is heal amount
             if (best->hp > best->max_hp) best->hp = best->max_hp;
-            u->cooldown_timer = u->cooldown;
-        }
-        return;
-    }
-
-    // Mage passive stance: buff nearest ally speed instead of attacking
-    if (u->role == ROLE_MAGE && u->team == TEAM_PLAYER &&
-        gs->squad_stance == STANCE_PASSIVE) {
-        Unit *nearest = NULL;
-        f32 best_dist = 1e9f;
-        for (u32 i = 0; i < gs->num_squad; i++) {
-            Unit *ally = &gs->squad[i];
-            if (!ally->alive || ally == u) continue;
-            f32 d = vec2_dist(u->pos, ally->pos);
-            if (d < best_dist) {
-                best_dist = d;
-                nearest = ally;
-            }
-        }
-        // Also consider the player
-        if (gs->player.alive) {
-            f32 d = vec2_dist(u->pos, gs->player.pos);
-            if (d < best_dist) {
-                nearest = &gs->player;
-            }
-        }
-        if (nearest) {
-            nearest->speed_boost_timer = 3.0f;
             u->cooldown_timer = u->cooldown;
         }
         return;
@@ -159,6 +131,8 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow);
     } else {
         g_combat_deal_damage(target, u->damage);
+        if (u->team == TEAM_PLAYER && !target->alive)
+            gs->enemies_killed++;
     }
 }
 
@@ -207,6 +181,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 if (!enemy->alive) continue;
                 if (vec2_dist(p->pos, enemy->pos) < hit_radius + enemy->radius) {
                     g_combat_deal_damage(enemy, p->damage);
+                    if (!enemy->alive) gs->enemies_killed++;
                     if (p->applies_slow) enemy->slow_timer = 2.0f;
                     hit = true;
                     break;

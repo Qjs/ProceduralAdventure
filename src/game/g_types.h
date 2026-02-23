@@ -3,6 +3,7 @@
 
 #include "../utils/q_util.h"
 #include "../mapgen/mg_types.h"
+#include <SDL3/SDL.h>
 #include <math.h>
 
 /* ---- Vec2 math (inline) ---- */
@@ -17,6 +18,16 @@ static inline Vec2 vec2_normalize(Vec2 v) {
     f32 l = vec2_len(v);
     if (l < 1e-8f) return (Vec2){0, 0};
     return vec2_scale(v, 1.0f / l);
+}
+
+// Smoothly interpolate angle (handles wraparound)
+#define PI_F 3.14159265f
+static inline f32 angle_lerp(f32 from, f32 to, f32 t) {
+    f32 diff = to - from;
+    // Wrap to [-PI, PI]
+    while (diff > PI_F)  diff -= 2.0f * PI_F;
+    while (diff < -PI_F) diff += 2.0f * PI_F;
+    return from + diff * t;
 }
 
 /* ---- Game constants ---- */
@@ -95,6 +106,7 @@ typedef struct {
     BoidWeights weights;
     f32       slow_timer;         // while >0, speed halved (freeze)
     f32       speed_boost_timer;  // while >0, speed 1.5x (mage buff)
+    f32       facing;             // radians, from atan2f(vel.y, vel.x)
 } Unit;
 
 typedef struct {
@@ -159,6 +171,8 @@ typedef struct {
     Portal      portal;
     bool        level_complete;
     SquadStance squad_stance;
+    u32         enemies_killed;
+    SDL_Texture *role_textures[ROLE_COUNT];
 } GameState;
 
 #endif

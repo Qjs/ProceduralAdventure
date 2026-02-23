@@ -1,5 +1,6 @@
 #include "g_game.h"
 #include "g_unit.h"
+#include "g_unit_gen.h"
 #include "g_render.h"
 #include "g_enemy.h"
 #include "g_combat.h"
@@ -17,13 +18,18 @@ static u32 xorshift32(u32 *state) {
     return x;
 }
 
-void g_game_init(Game *game, const MapGraph *graph) {
+void g_game_init(Game *game, SDL_Renderer *renderer, const MapGraph *graph,
+                 u32 level, const u32 stat_levels[][4]) {
     // Free old terrain if reinitializing
     if (game->state.terrain_ready) {
         g_terrain_free(&game->terrain);
     }
 
+    // Destroy old role textures before zeroing state
+    g_unit_gen_destroy(game->state.role_textures);
+
     game->state = (GameState){0};
+    g_unit_gen_textures(renderer, game->state.role_textures);
     game->state.elevation_speed_factor = 0.5f;
     game->state.water_blocks_movement = true;
     game->state.squad_stance = STANCE_DEFENSIVE;
@@ -31,9 +37,17 @@ void g_game_init(Game *game, const MapGraph *graph) {
     g_terrain_build_grid(&game->terrain, graph);
     game->state.terrain_ready = true;
 
+    // Sum total player upgrades for enemy scaling
+    u32 total_upgrades = 0;
+    if (stat_levels) {
+        for (u32 i = 0; i < MAX_SQUAD; i++)
+            for (u32 s = 0; s < 4; s++)
+                total_upgrades += stat_levels[i][s];
+    }
+
     g_unit_init_player(&game->state.player, &game->terrain, graph);
-    g_unit_init_squad(&game->state, &game->terrain, graph);
-    g_enemy_place_camps(&game->state, &game->terrain, graph);
+    g_unit_init_squad(&game->state, &game->terrain, graph, stat_levels);
+    g_enemy_place_camps(&game->state, &game->terrain, graph, level, total_upgrades);
 
     // Initialize camera centered on player
     game->state.camera.pos = game->state.player.pos;
@@ -188,15 +202,21 @@ static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *g
         f32 force_len = vec2_len(force);
         if (force_len > 0.25f) {
             Vec2 dir = vec2_scale(force, 1.0f / force_len);
+            f32 target_facing = atan2f(dir.y, dir.x);
+            f32 lerp_t = 1.0f - expf(-8.0f * dt);
+            u->facing = angle_lerp(u->facing, target_facing, lerp_t);
             f32 elev = g_terrain_get_elevation(tg, graph, u->pos);
             f32 speed = u->speed * (1.0f - elev * gs->elevation_speed_factor);
             if (u->slow_timer > 0.0f) speed *= 0.5f;
             if (u->speed_boost_timer > 0.0f) speed *= 1.5f;
             if (speed < 0.01f) speed = 0.01f;
 
+            bool water_blocks = gs->squad_stance != STANCE_PASSIVE;
+            if (!water_blocks && g_terrain_is_water(tg, graph, u->pos))
+                speed *= 0.5f;
             Vec2 new_pos = vec2_add(u->pos, vec2_scale(dir, speed * dt));
             u->pos = g_unit_move_with_terrain(u->pos, new_pos, tg, graph,
-                                               gs->water_blocks_movement);
+                                               water_blocks);
         }
     }
 }
@@ -220,13 +240,36 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
         if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])  dir.x -= 1.0f;
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) dir.x += 1.0f;
 
-        // Stance hotkeys
-        if (keys[SDL_SCANCODE_1]) gs->squad_stance = STANCE_AGGRESSIVE;
-        if (keys[SDL_SCANCODE_2]) gs->squad_stance = STANCE_DEFENSIVE;
-        if (keys[SDL_SCANCODE_3]) gs->squad_stance = STANCE_PASSIVE;
+        // Stance hotkeys (block switching while player is on water)
+        SquadStance prev_stance = gs->squad_stance;
+        bool on_water = g_terrain_is_water(tg, graph, gs->player.pos);
+        if (!on_water) {
+            if (keys[SDL_SCANCODE_1]) gs->squad_stance = STANCE_AGGRESSIVE;
+            if (keys[SDL_SCANCODE_2]) gs->squad_stance = STANCE_DEFENSIVE;
+            if (keys[SDL_SCANCODE_3]) gs->squad_stance = STANCE_PASSIVE;
+        }
+
+        // Mage one-shot speed boost on switching to passive
+        if (gs->squad_stance == STANCE_PASSIVE && prev_stance != STANCE_PASSIVE) {
+            for (u32 i = 0; i < gs->num_squad; i++) {
+                if (!gs->squad[i].alive) continue;
+                if (gs->squad[i].role != ROLE_MAGE) continue;
+                // Boost all alive squad allies + player
+                if (gs->player.alive)
+                    gs->player.speed_boost_timer = 3.0f;
+                for (u32 j = 0; j < gs->num_squad; j++) {
+                    if (j == i || !gs->squad[j].alive) continue;
+                    gs->squad[j].speed_boost_timer = 3.0f;
+                }
+                break; // one mage is enough
+            }
+        }
 
         if (vec2_len(dir) > 0.0f) {
             dir = vec2_normalize(dir);
+            f32 target_facing = atan2f(dir.y, dir.x);
+            f32 lerp_t = 1.0f - expf(-15.0f * fdt); // fast but smooth
+            gs->player.facing = angle_lerp(gs->player.facing, target_facing, lerp_t);
 
             // Terrain speed modifier
             f32 elev = g_terrain_get_elevation(tg, graph, gs->player.pos);
@@ -235,9 +278,12 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
             if (gs->player.speed_boost_timer > 0.0f) speed *= 1.5f;
             if (speed < 0.01f) speed = 0.01f;
 
+            bool water_blocks = gs->squad_stance != STANCE_PASSIVE;
+            if (!water_blocks && g_terrain_is_water(tg, graph, gs->player.pos))
+                speed *= 0.5f;
             Vec2 new_pos = vec2_add(gs->player.pos, vec2_scale(dir, speed * fdt));
             gs->player.pos = g_unit_move_with_terrain(gs->player.pos, new_pos,
-                                                       tg, graph, gs->water_blocks_movement);
+                                                       tg, graph, water_blocks);
         }
     }
 
@@ -297,10 +343,11 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
 }
 
 void g_game_render(Game *game, SDL_Renderer *renderer, SDL_FRect map_rect) {
-    g_render_game(&game->state, renderer, map_rect);
+    g_render_game(&game->state, renderer, map_rect, game->state.role_textures);
 }
 
 void g_game_shutdown(Game *game) {
+    g_unit_gen_destroy(game->state.role_textures);
     if (game->state.terrain_ready) {
         g_terrain_free(&game->terrain);
         game->state.terrain_ready = false;

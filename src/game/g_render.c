@@ -1,6 +1,12 @@
 #include "g_render.h"
 #include <math.h>
 
+#define CIRCLE_SEGMENTS 24
+
+// Forward declarations
+static void fill_circle(SDL_Renderer *renderer, f32 cx, f32 cy, f32 radius,
+                        u8 r, u8 g, u8 b, u8 a);
+
 // Convert game coords [0,1]² to screen coords via map_rect
 static SDL_FRect unit_screen_rect(const Unit *u, SDL_FRect mr) {
     f32 screen_r = u->radius * mr.w;
@@ -9,11 +15,128 @@ static SDL_FRect unit_screen_rect(const Unit *u, SDL_FRect mr) {
     return (SDL_FRect){sx, sy, screen_r * 2.0f, screen_r * 2.0f};
 }
 
-static void draw_unit(SDL_Renderer *renderer, const Unit *u, SDL_FRect map_rect) {
+static void draw_weapon(SDL_Renderer *renderer, const Unit *u, f32 cx, f32 cy,
+                        f32 screen_r, f32 facing) {
+    f32 cos_f = cosf(facing);
+    f32 sin_f = sinf(facing);
+
+    // Weapon base: from body edge outward, offset to the right side
+    f32 perp_x = -sin_f; // perpendicular (right-hand side)
+    f32 perp_y =  cos_f;
+    f32 side_offset = screen_r * 0.35f;
+    f32 base_x = cx + cos_f * screen_r * 0.8f + perp_x * side_offset;
+    f32 base_y = cy + sin_f * screen_r * 0.8f + perp_y * side_offset;
+    f32 tip_x, tip_y;
+
+    switch (u->role) {
+        case ROLE_PLAYER:
+        case ROLE_MELEE: {
+            // Short thick sword — draw 2 parallel lines for thickness
+            tip_x = base_x + cos_f * screen_r * 1.0f;
+            tip_y = base_y + sin_f * screen_r * 1.0f;
+            f32 px = -sin_f * 1.0f, py = cos_f * 1.0f;
+            SDL_SetRenderDrawColor(renderer, 200, 200, 210, 255);
+            SDL_RenderLine(renderer, base_x + px, base_y + py, tip_x + px, tip_y + py);
+            SDL_RenderLine(renderer, base_x - px, base_y - py, tip_x - px, tip_y - py);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            break;
+        }
+        case ROLE_ARCHER: {
+            // Bow: thin line + perpendicular bar
+            tip_x = base_x + cos_f * screen_r * 0.9f;
+            tip_y = base_y + sin_f * screen_r * 0.9f;
+            SDL_SetRenderDrawColor(renderer, 139, 90, 43, 255);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            // Perpendicular bar (bowstring)
+            f32 px = -sin_f * screen_r * 0.5f;
+            f32 py = cos_f * screen_r * 0.5f;
+            SDL_RenderLine(renderer, tip_x + px, tip_y + py, tip_x - px, tip_y - py);
+            break;
+        }
+        case ROLE_HEALER: {
+            // Staff with circle at tip
+            tip_x = base_x + cos_f * screen_r * 1.1f;
+            tip_y = base_y + sin_f * screen_r * 1.1f;
+            SDL_SetRenderDrawColor(renderer, 200, 180, 100, 255);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            fill_circle(renderer, tip_x, tip_y, screen_r * 0.2f, 255, 230, 100, 220);
+            break;
+        }
+        case ROLE_MAGE: {
+            // Staff with diamond at tip
+            tip_x = base_x + cos_f * screen_r * 1.1f;
+            tip_y = base_y + sin_f * screen_r * 1.1f;
+            SDL_SetRenderDrawColor(renderer, 140, 100, 200, 255);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            // Diamond shape (4 lines)
+            f32 d = screen_r * 0.25f;
+            f32 px = -sin_f, py = cos_f;
+            SDL_SetRenderDrawColor(renderer, 160, 120, 255, 255);
+            SDL_RenderLine(renderer, tip_x + cos_f * d, tip_y + sin_f * d,
+                          tip_x + px * d, tip_y + py * d);
+            SDL_RenderLine(renderer, tip_x + px * d, tip_y + py * d,
+                          tip_x - cos_f * d, tip_y - sin_f * d);
+            SDL_RenderLine(renderer, tip_x - cos_f * d, tip_y - sin_f * d,
+                          tip_x - px * d, tip_y - py * d);
+            SDL_RenderLine(renderer, tip_x - px * d, tip_y - py * d,
+                          tip_x + cos_f * d, tip_y + sin_f * d);
+            break;
+        }
+        case ROLE_ENEMY_MELEE: {
+            // Club — short thick line
+            tip_x = base_x + cos_f * screen_r * 0.8f;
+            tip_y = base_y + sin_f * screen_r * 0.8f;
+            f32 px = -sin_f * 1.5f, py = cos_f * 1.5f;
+            SDL_SetRenderDrawColor(renderer, 100, 60, 30, 255);
+            SDL_RenderLine(renderer, base_x + px, base_y + py, tip_x + px, tip_y + py);
+            SDL_RenderLine(renderer, base_x - px, base_y - py, tip_x - px, tip_y - py);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            break;
+        }
+        case ROLE_ENEMY_RANGED: {
+            // Spear — thin line
+            tip_x = base_x + cos_f * screen_r * 1.2f;
+            tip_y = base_y + sin_f * screen_r * 1.2f;
+            SDL_SetRenderDrawColor(renderer, 120, 80, 140, 255);
+            SDL_RenderLine(renderer, base_x, base_y, tip_x, tip_y);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static void draw_unit_composite(SDL_Renderer *renderer, const Unit *u,
+                                SDL_FRect map_rect, SDL_Texture *role_tex) {
     if (!u->alive) return;
-    SDL_SetRenderDrawColor(renderer, u->color[0], u->color[1], u->color[2], u->color[3]);
-    SDL_FRect r = unit_screen_rect(u, map_rect);
-    SDL_RenderFillRect(renderer, &r);
+
+    f32 screen_r = u->radius * map_rect.w;
+    f32 cx = map_rect.x + u->pos.x * map_rect.w;
+    f32 cy = map_rect.y + u->pos.y * map_rect.h;
+    f32 facing = u->facing;
+
+    // 1. Body — textured circle (rotated)
+    if (role_tex) {
+        f32 size = screen_r * 2.0f;
+        SDL_FRect dst = {cx - screen_r, cy - screen_r, size, size};
+        f32 angle_deg = facing * (180.0f / 3.14159265f);
+        SDL_RenderTextureRotated(renderer, role_tex, NULL, &dst,
+                                 (double)angle_deg, NULL, SDL_FLIP_NONE);
+    } else {
+        // Fallback: colored circle
+        fill_circle(renderer, cx, cy, screen_r,
+                    u->color[0], u->color[1], u->color[2], u->color[3]);
+    }
+
+    // 2. Head — small skin-toned circle, offset forward
+    f32 head_offset = screen_r * 0.4f;
+    f32 head_r = screen_r * 0.25f;
+    f32 head_x = cx + cosf(facing) * head_offset;
+    f32 head_y = cy + sinf(facing) * head_offset;
+    fill_circle(renderer, head_x, head_y, head_r, 210, 180, 140, 255);
+
+    // 3. Weapon
+    draw_weapon(renderer, u, cx, cy, screen_r, facing);
 }
 
 static void draw_health_bar(SDL_Renderer *renderer, const Unit *u, SDL_FRect map_rect) {
@@ -39,8 +162,6 @@ static void draw_health_bar(SDL_Renderer *renderer, const Unit *u, SDL_FRect map
     SDL_FRect fg = {bar_x, bar_y, bar_w * hp_frac, bar_h};
     SDL_RenderFillRect(renderer, &fg);
 }
-
-#define CIRCLE_SEGMENTS 24
 
 // Draw a filled circle as a triangle fan using SDL_RenderGeometry
 static void fill_circle(SDL_Renderer *renderer, f32 cx, f32 cy, f32 radius,
@@ -234,7 +355,8 @@ static void draw_projectile(SDL_Renderer *renderer, const Projectile *p, SDL_FRe
     SDL_RenderFillRect(renderer, &rect);
 }
 
-void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect) {
+void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
+                   SDL_Texture *role_textures[ROLE_COUNT]) {
     // Orbs
     for (u32 i = 0; i < gs->num_orbs; i++) {
         draw_orb(renderer, &gs->orbs[i], map_rect);
@@ -250,7 +372,9 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect) {
 
     // Enemies
     for (u32 i = 0; i < gs->num_enemies; i++) {
-        draw_unit(renderer, &gs->enemies[i], map_rect);
+        Unit *e = &gs->enemies[i];
+        SDL_Texture *tex = (e->role < ROLE_COUNT) ? role_textures[e->role] : NULL;
+        draw_unit_composite(renderer, e, map_rect, tex);
     }
 
     // Projectiles
@@ -260,11 +384,17 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect) {
 
     // Squad companions
     for (u32 i = 0; i < gs->num_squad; i++) {
-        draw_unit(renderer, &gs->squad[i], map_rect);
+        Unit *u = &gs->squad[i];
+        SDL_Texture *tex = (u->role < ROLE_COUNT) ? role_textures[u->role] : NULL;
+        draw_unit_composite(renderer, u, map_rect, tex);
     }
 
     // Player (drawn last, on top)
-    draw_unit(renderer, &gs->player, map_rect);
+    {
+        Unit *p = &gs->player;
+        SDL_Texture *tex = (p->role < ROLE_COUNT) ? role_textures[p->role] : NULL;
+        draw_unit_composite(renderer, p, map_rect, tex);
+    }
 
     // Health bars on top of everything
     for (u32 i = 0; i < gs->num_enemies; i++) {

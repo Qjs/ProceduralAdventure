@@ -39,7 +39,8 @@ void g_unit_init_player(Unit *unit, const TerrainGrid *tg, const MapGraph *graph
     unit->pos = graph->centers[cell].pos;
 }
 
-void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph) {
+void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
+                       const u32 stat_levels[][4]) {
     typedef struct {
         UnitRole role;
         u8 r, g, b;
@@ -98,13 +99,22 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
             .separation_radius = 0.02f,
         };
 
+        // Apply upgrade multipliers
+        if (stat_levels) {
+            u->max_hp   *= (1.0f + 0.10f * stat_levels[i][0]);
+            u->hp        = u->max_hp;
+            u->damage   *= (1.0f + 0.10f * stat_levels[i][1]);
+            u->attack_range *= (1.0f + 0.08f * stat_levels[i][2]);
+            u->cooldown *= (1.0f - 0.05f * stat_levels[i][3]);
+        }
+
         // Spawn near player
         Vec2 spawn = vec2_add(gs->player.pos, offsets[i]);
         u->pos = g_unit_move_with_terrain(gs->player.pos, spawn, tg, graph, true);
     }
 }
 
-void g_unit_init_enemy(Unit *unit, UnitRole role) {
+void g_unit_init_enemy(Unit *unit, UnitRole role, u32 level, u32 total_upgrades) {
     *unit = (Unit){0};
     unit->alive = true;
     unit->role = role;
@@ -131,6 +141,13 @@ void g_unit_init_enemy(Unit *unit, UnitRole role) {
         unit->cooldown = 1.5f;
         unit->color[0] = 120; unit->color[1] = 40; unit->color[2] = 160; unit->color[3] = 255;
     }
+
+    // Difficulty scaling by level + player upgrades (+2% per upgrade purchased)
+    f32 hp_scale  = 1.0f + level * 0.15f + total_upgrades * 0.02f;
+    f32 dmg_scale = 1.0f + level * 0.10f + total_upgrades * 0.02f;
+    unit->hp     *= hp_scale;
+    unit->max_hp *= hp_scale;
+    unit->damage *= dmg_scale;
 }
 
 u32 g_unit_find_nearest_enemy(GameState *gs, const Unit *u) {

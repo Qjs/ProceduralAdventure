@@ -47,7 +47,8 @@ bool app_init(App *app, const char *title, int w, int h) {
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
 
     // Initialize game state
-    g_game_init(&app->game, &app->map.graph);
+    g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+    app->upgrading = true;
 
     // Initialize timing
     app->last_time = get_time_seconds();
@@ -88,10 +89,18 @@ void app_update(App *app) {
     app->last_time = now;
     if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
 
+    // Pause game while on upgrade screen
+    if (app->upgrading) return;
+
     g_game_update(&app->game, &app->map.graph, app->dt);
 
-    // Level transition — keep all params, only change seed
+    // Level transition — tally XP, regenerate map, show upgrade screen
     if (app->game.state.level_complete) {
+        GameState *gs = &app->game.state;
+        u32 earned = gs->enemies_killed * 5 + gs->orbs_collected * 10 + 50;
+        app->progression.xp += earned;
+        app->progression.total_xp += earned;
+
         app->level++;
         app->map.params.seed++;
         mg_map_generate(&app->map);
@@ -100,7 +109,8 @@ void app_update(App *app) {
             app->map_texture = NULL;
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
-        g_game_init(&app->game, &app->map.graph);
+        g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+        app->upgrading = true;
     }
 }
 
@@ -349,6 +359,59 @@ void app_render(App *app) {
 
     igEnd();
 
+    // ---- Upgrade screen modal ----
+    if (app->upgrading) {
+        static const char *role_names[] = { "Melee", "Archer", "Healer", "Mage" };
+        static const char *stat_names[] = { "HP", "Damage", "Range", "Cooldown" };
+
+        ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
+        igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
+        igSetNextWindowSize((ImVec2_c){420, 0}, ImGuiCond_Always);
+
+        ImGuiWindowFlags modal_flags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+
+        igBegin("Upgrades", NULL, modal_flags);
+
+        igText("Level %u", app->level + 1);
+        igText("XP: %u  (Total: %u)", app->progression.xp, app->progression.total_xp);
+        igSeparator();
+
+        for (u32 i = 0; i < MAX_SQUAD; i++) {
+            igPushID_Int((int)i);
+            igText("%s", role_names[i]);
+
+            for (u32 s = 0; s < 4; s++) {
+                igPushID_Int((int)s);
+                u32 lvl = app->progression.stat_levels[i][s];
+                igText("  %s Lv.%u", stat_names[s], lvl);
+                igSameLine(0, 8);
+                bool can_buy = app->progression.xp >= 15;
+                if (!can_buy) igBeginDisabled(true);
+                if (igSmallButton("+")) {
+                    app->progression.stat_levels[i][s]++;
+                    app->progression.xp -= 15;
+                }
+                if (!can_buy) igEndDisabled();
+                igPopID();
+            }
+
+            if (i < MAX_SQUAD - 1) igSeparator();
+            igPopID();
+        }
+
+        igSpacing();
+        igSeparator();
+        if (igButton("Start Level", (ImVec2_c){-1, 32})) {
+            app->upgrading = false;
+            // Re-init game with updated stat levels
+            g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+        }
+
+        igEnd();
+    }
+
     // Handle regeneration
     if (regenerate) {
         mg_map_generate(&app->map);
@@ -357,7 +420,7 @@ void app_render(App *app) {
             app->map_texture = NULL;
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
-        g_game_init(&app->game, &app->map.graph);
+        g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
     }
 
     ImGui_SDL3_Render(app->renderer);

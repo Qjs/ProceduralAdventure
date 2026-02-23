@@ -10,7 +10,8 @@ static u32 enemy_xorshift(u32 *state) {
     return x;
 }
 
-void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *graph) {
+void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
+                         u32 level, u32 total_upgrades) {
     gs->num_camps = 0;
     gs->num_enemies = 0;
 
@@ -84,9 +85,9 @@ void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *g
         camp->num_enemies = 0;
         camp->num_alive = 0;
 
-        // Spawn 3-5 enemies per camp
-        u32 count = 3 + (enemy_xorshift(&rng) % 3);
-        if (count > 5) count = 5;
+        // Spawn enemies per camp, scaling with level
+        u32 count = 3 + level / 2;
+        if (count > 8) count = 8;
 
         for (u32 e = 0; e < count && gs->num_enemies < MAX_ENEMIES; e++) {
             u32 eid = gs->num_enemies;
@@ -94,7 +95,7 @@ void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *g
 
             // Mix: ~60% melee, ~40% ranged
             UnitRole role = (enemy_xorshift(&rng) % 5 < 3) ? ROLE_ENEMY_MELEE : ROLE_ENEMY_RANGED;
-            g_unit_init_enemy(unit, role);
+            g_unit_init_enemy(unit, role, level, total_upgrades);
 
             // Scatter around camp center
             f32 ox = ((f32)(enemy_xorshift(&rng) % 1000) / 1000.0f - 0.5f) * camp->spawn_radius * 2.0f;
@@ -201,6 +202,9 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
         }
 
         Vec2 dir = vec2_normalize(vec2_sub(move_target, e->pos));
+        f32 target_facing = atan2f(dir.y, dir.x);
+        f32 lerp_t = 1.0f - expf(-10.0f * dt);
+        e->facing = angle_lerp(e->facing, target_facing, lerp_t);
         f32 elev = g_terrain_get_elevation(tg, graph, e->pos);
         f32 speed = e->speed * (1.0f - elev * 0.5f);
         if (e->slow_timer > 0.0f) speed *= 0.5f;
