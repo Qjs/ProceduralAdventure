@@ -1,0 +1,12 @@
+[submodule "SDL"]
+	path = SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "cimgui"]
+	path = cimgui
+	url = https://github.com/cimgui/cimgui.git
+[submodule "lib/cimgui"]
+	path = lib/cimgui
+	url = https://github.com/cimgui/cimgui.git
+[submodule "lib/SDL"]
+	path = lib/SDL
+	url = https://github.com/libsdl-org/SDL.git
