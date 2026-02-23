@@ -57,6 +57,8 @@ add_executable(ProceduralAdventure
     src/game/g_terrain.c
     src/game/g_unit.c
     src/game/g_render.c
+    src/game/g_enemy.c
+    src/game/g_combat.c
 )
 
 target_include_directories(ProceduralAdventure PRIVATE

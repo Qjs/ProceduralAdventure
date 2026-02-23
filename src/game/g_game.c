@@ -1,9 +1,21 @@
 #include "g_game.h"
 #include "g_unit.h"
 #include "g_render.h"
+#include "g_enemy.h"
+#include "g_combat.h"
+#include <stdlib.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
+
+static u32 xorshift32(u32 *state) {
+    u32 x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
 
 void g_game_init(Game *game, const MapGraph *graph) {
     // Free old terrain if reinitializing
@@ -20,10 +32,54 @@ void g_game_init(Game *game, const MapGraph *graph) {
 
     g_unit_init_player(&game->state.player, &game->terrain, graph);
     g_unit_init_squad(&game->state, &game->terrain, graph);
+    g_enemy_place_camps(&game->state, &game->terrain, graph);
 
     // Initialize camera centered on player
     game->state.camera.pos = game->state.player.pos;
     game->state.camera.zoom = 5.0f;
+
+    // Spawn orbs on random land cells
+    game->state.orbs_collected = 0;
+    game->state.portal.active = false;
+    game->state.level_complete = false;
+
+    // Collect valid land cell indices
+    u32 *land_indices = NULL;
+    u32 num_land = 0;
+    land_indices = malloc(graph->num_centers * sizeof(u32));
+    for (u32 i = 0; i < graph->num_centers; i++) {
+        if (!graph->centers[i].water && !graph->centers[i].border) {
+            land_indices[num_land++] = i;
+        }
+    }
+
+    // Fisher-Yates partial shuffle to pick NUM_COLLECT_ORBS + 1 random cells
+    // (5 for orbs, 1 for portal spawn location)
+    u32 rng_state = (u32)(size_t)graph ^ 0xDEADBEEF;
+    if (rng_state == 0) rng_state = 1;
+    u32 total_pick = (NUM_COLLECT_ORBS + 1) < num_land ? (NUM_COLLECT_ORBS + 1) : num_land;
+    for (u32 i = 0; i < total_pick; i++) {
+        u32 j = i + (xorshift32(&rng_state) % (num_land - i));
+        u32 tmp = land_indices[i];
+        land_indices[i] = land_indices[j];
+        land_indices[j] = tmp;
+    }
+
+    u32 orb_count = total_pick > NUM_COLLECT_ORBS ? NUM_COLLECT_ORBS : total_pick;
+    game->state.num_orbs = orb_count;
+    for (u32 i = 0; i < orb_count; i++) {
+        Orb *orb = &game->state.orbs[i];
+        orb->active = true;
+        orb->pos = graph->centers[land_indices[i]].pos;
+        orb->radius = 0.004f;
+        orb->pulse_timer = (f32)i * 1.2f; // offset phase per orb
+    }
+
+    // Pre-select portal spawn position (last shuffled cell)
+    u32 portal_idx = total_pick > NUM_COLLECT_ORBS ? NUM_COLLECT_ORBS : 0;
+    game->state.portal.spawn_pos = graph->centers[land_indices[portal_idx]].pos;
+
+    free(land_indices);
 }
 
 static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph, f32 dt) {
@@ -33,32 +89,67 @@ static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *g
 
         Vec2 force = {0, 0};
 
-        // 1. Follow player — attenuate when within preferred_dist
-        Vec2 to_player = vec2_sub(gs->player.pos, u->pos);
-        f32 dist_to_player = vec2_len(to_player);
-        if (dist_to_player > 1e-3f) {
-            f32 follow_strength = u->weights.follow_player;
-            if (dist_to_player < u->weights.preferred_dist) {
-                follow_strength *= dist_to_player / u->weights.preferred_dist;
+        if (u->state == STATE_ATTACK) {
+            // Seek nearest enemy instead of following player
+            u32 target_idx = g_unit_find_nearest_enemy(gs, u);
+            if (target_idx != UINT32_MAX && target_idx < gs->num_enemies) {
+                Vec2 to_target = vec2_sub(gs->enemies[target_idx].pos, u->pos);
+                f32 dist_target = vec2_len(to_target);
+                if (dist_target > 1e-3f) {
+                    // Move toward target but stop at attack range
+                    f32 seek_str = 1.5f;
+                    if (dist_target < u->attack_range)
+                        seek_str *= 0.1f; // slow down when in range
+                    force = vec2_add(force, vec2_scale(vec2_normalize(to_target), seek_str));
+                }
+            } else {
+                // No enemies — fall through to follow player
+                u->state = STATE_FOLLOW;
             }
-            Vec2 follow = vec2_scale(vec2_normalize(to_player), follow_strength);
-            force = vec2_add(force, follow);
         }
 
-        // 2. Separation from other squad members
+        if (u->state == STATE_RETREAT) {
+            // Flee from nearest enemy, head toward player
+            u32 target_idx = g_unit_find_nearest_enemy(gs, u);
+            if (target_idx != UINT32_MAX && target_idx < gs->num_enemies) {
+                Vec2 away = vec2_sub(u->pos, gs->enemies[target_idx].pos);
+                f32 d = vec2_len(away);
+                if (d > 1e-3f)
+                    force = vec2_add(force, vec2_scale(vec2_normalize(away), 1.0f));
+            }
+            // Also pull toward player
+            Vec2 to_player = vec2_sub(gs->player.pos, u->pos);
+            if (vec2_len(to_player) > 1e-3f)
+                force = vec2_add(force, vec2_scale(vec2_normalize(to_player), 0.8f));
+        }
+
+        if (u->state == STATE_FOLLOW || u->state == STATE_HEAL) {
+            // Follow player — attenuate when within preferred_dist
+            Vec2 to_player = vec2_sub(gs->player.pos, u->pos);
+            f32 dist_to_player = vec2_len(to_player);
+            if (dist_to_player > 1e-3f) {
+                f32 follow_strength = u->weights.follow_player;
+                if (dist_to_player < u->weights.preferred_dist) {
+                    follow_strength *= dist_to_player / u->weights.preferred_dist;
+                }
+                Vec2 follow = vec2_scale(vec2_normalize(to_player), follow_strength);
+                force = vec2_add(force, follow);
+            }
+        }
+
+        // Separation from other squad members (always active)
         Vec2 sep = {0, 0};
         for (u32 j = 0; j < gs->num_squad; j++) {
             if (j == i || !gs->squad[j].alive) continue;
             Vec2 diff = vec2_sub(u->pos, gs->squad[j].pos);
             f32 d = vec2_len(diff);
             if (d < u->weights.separation_radius && d > 1e-6f) {
-                // Stronger repulsion when closer
                 sep = vec2_add(sep, vec2_scale(vec2_normalize(diff), 1.0f / d));
             }
         }
         force = vec2_add(force, vec2_scale(sep, u->weights.separation));
 
-        // 3. Cohesion — steer toward squad centroid
+        // Cohesion — steer toward squad centroid (always active)
         Vec2 centroid = {0, 0};
         u32 count = 0;
         for (u32 j = 0; j < gs->num_squad; j++) {
@@ -118,6 +209,43 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
 
     // Update squad boid steering
     update_squad(gs, tg, graph, fdt);
+
+    // Enemy AI + combat
+    g_enemy_update(gs, tg, graph, fdt);
+    g_combat_update_squad_states(gs);
+    g_combat_update(gs, fdt);
+    g_combat_update_projectiles(gs, fdt);
+
+    // Orb collection
+    for (u32 i = 0; i < gs->num_orbs; i++) {
+        Orb *orb = &gs->orbs[i];
+        if (!orb->active) continue;
+        orb->pulse_timer += fdt;
+        if (vec2_dist(gs->player.pos, orb->pos) < gs->player.radius + orb->radius) {
+            orb->active = false;
+            gs->orbs_collected++;
+        }
+    }
+
+    // Portal spawn when all orbs collected
+    if (gs->orbs_collected == NUM_COLLECT_ORBS && !gs->portal.active) {
+        gs->portal.active = true;
+        gs->portal.pos = gs->portal.spawn_pos;
+        gs->portal.radius_x = 0.006f;
+        gs->portal.radius_y = 0.012f;
+        gs->portal.pulse_timer = 0.0f;
+    }
+
+    // Portal enter (ellipse collision using normalized distance)
+    if (gs->portal.active) {
+        gs->portal.pulse_timer += fdt;
+        Vec2 d = vec2_sub(gs->player.pos, gs->portal.pos);
+        f32 nx = d.x / gs->portal.radius_x;
+        f32 ny = d.y / gs->portal.radius_y;
+        if (nx * nx + ny * ny < 1.0f) {
+            gs->level_complete = true;
+        }
+    }
 
     // Smooth camera follow (lerp toward player)
     f32 lerp_speed = 5.0f;

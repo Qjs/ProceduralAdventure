@@ -74,7 +74,10 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
         u->hp = defs[i].hp;
         u->max_hp = defs[i].hp;
         u->damage = 10.0f;
-        u->attack_range = 0.015f;
+        u->attack_range = (defs[i].role == ROLE_HEALER) ? 0.08f
+                        : (defs[i].role == ROLE_ARCHER) ? 0.07f
+                        : (defs[i].role == ROLE_MAGE)   ? 0.06f
+                        : 0.015f;
         u->cooldown = 0.8f;
         u->cooldown_timer = 0.0f;
         u->radius = 0.005f;
@@ -99,6 +102,68 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
         Vec2 spawn = vec2_add(gs->player.pos, offsets[i]);
         u->pos = g_unit_move_with_terrain(gs->player.pos, spawn, tg, graph, true);
     }
+}
+
+void g_unit_init_enemy(Unit *unit, UnitRole role) {
+    *unit = (Unit){0};
+    unit->alive = true;
+    unit->role = role;
+    unit->team = TEAM_ENEMY;
+    unit->state = STATE_IDLE;
+    unit->radius = 0.005f;
+    unit->target_id = UINT32_MAX;
+
+    if (role == ROLE_ENEMY_MELEE) {
+        unit->hp = 60.0f;
+        unit->max_hp = 60.0f;
+        unit->speed = 0.05f;
+        unit->damage = 10.0f;
+        unit->attack_range = 0.015f;
+        unit->cooldown = 1.0f;
+        unit->color[0] = 180; unit->color[1] = 40; unit->color[2] = 40; unit->color[3] = 255;
+    } else {
+        // ROLE_ENEMY_RANGED
+        unit->hp = 40.0f;
+        unit->max_hp = 40.0f;
+        unit->speed = 0.04f;
+        unit->damage = 8.0f;
+        unit->attack_range = 0.06f;
+        unit->cooldown = 1.5f;
+        unit->color[0] = 120; unit->color[1] = 40; unit->color[2] = 160; unit->color[3] = 255;
+    }
+}
+
+u32 g_unit_find_nearest_enemy(GameState *gs, const Unit *u) {
+    f32 best_dist = 1e30f;
+    u32 best_id = UINT32_MAX;
+
+    if (u->team == TEAM_PLAYER) {
+        // Find nearest enemy
+        for (u32 i = 0; i < gs->num_enemies; i++) {
+            if (!gs->enemies[i].alive) continue;
+            f32 d = vec2_dist(u->pos, gs->enemies[i].pos);
+            if (d < best_dist) {
+                best_dist = d;
+                best_id = i;
+            }
+        }
+    } else {
+        // Find nearest player-team unit: 0=player, 1+=squad
+        if (gs->player.alive) {
+            best_dist = vec2_dist(u->pos, gs->player.pos);
+            best_id = 0;
+        }
+        for (u32 i = 0; i < gs->num_squad; i++) {
+            if (!gs->squad[i].alive) continue;
+            f32 d = vec2_dist(u->pos, gs->squad[i].pos);
+            if (d < best_dist) {
+                best_dist = d;
+                best_id = i + 1;
+            }
+        }
+    }
+
+    return best_id;
 }
 
 Vec2 g_unit_move_with_terrain(Vec2 old_pos, Vec2 new_pos,

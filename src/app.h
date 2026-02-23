@@ -17,6 +17,7 @@ typedef struct {
     Game          game;
     f64           last_time;  // seconds (perf counter)
     f64           dt;         // delta time for current frame
+    u32           level;
 
     // UI toggle state
     bool          show_map_gen;

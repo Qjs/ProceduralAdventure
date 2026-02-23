@@ -89,6 +89,19 @@ void app_update(App *app) {
     if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
 
     g_game_update(&app->game, &app->map.graph, app->dt);
+
+    // Level transition — keep all params, only change seed
+    if (app->game.state.level_complete) {
+        app->level++;
+        app->map.params.seed++;
+        mg_map_generate(&app->map);
+        if (app->map_texture) {
+            SDL_DestroyTexture(app->map_texture);
+            app->map_texture = NULL;
+        }
+        mg_upload_texture(&app->map, app->renderer, &app->map_texture);
+        g_game_init(&app->game, &app->map.graph);
+    }
 }
 
 void app_render(App *app) {
@@ -198,6 +211,7 @@ void app_render(App *app) {
             igPopStyleColor(1);
 
             igText("Pos: (%.2f, %.2f)", player->pos.x, player->pos.y);
+            igText("Level: %u  Orbs: %u / %u", app->level + 1, app->game.state.orbs_collected, NUM_COLLECT_ORBS);
         }
     }
 
@@ -291,6 +305,18 @@ void app_render(App *app) {
             ImVec2_c rect_max = {rect_min.x + view_size * mm_size, rect_min.y + view_size * mm_size};
             ImDrawList_AddRect(dl, rect_min, rect_max,
                                0xC8FFFFFF, 0.0f, 0, 1.5f);
+
+            // Enemy dots (red)
+            GameState *gs = &app->game.state;
+            for (u32 i = 0; i < gs->num_enemies; i++) {
+                if (!gs->enemies[i].alive) continue;
+                float ex = cursor.x + gs->enemies[i].pos.x * mm_size;
+                float ey = cursor.y + gs->enemies[i].pos.y * mm_size;
+                ImVec2_c e_min = {ex - 1.5f, ey - 1.5f};
+                ImVec2_c e_max = {ex + 1.5f, ey + 1.5f};
+                ImDrawList_AddRectFilled(dl, e_min, e_max,
+                                         0xFF2020CC, 0.0f, 0);
+            }
 
             // Player dot
             float px = cursor.x + app->game.state.player.pos.x * mm_size;

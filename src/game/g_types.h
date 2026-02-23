@@ -25,6 +25,8 @@ static inline Vec2 vec2_normalize(Vec2 v) {
 #define MAX_ENEMIES   64
 #define MAX_PROJECTILES 128
 #define MAX_CAMPS     16
+#define MAX_ORBS         5
+#define NUM_COLLECT_ORBS 5
 
 /* ---- Enums ---- */
 
@@ -108,6 +110,22 @@ typedef struct {
 } EnemyCamp;
 
 typedef struct {
+    bool  active;
+    Vec2  pos;
+    f32   radius;
+    f32   pulse_timer;
+} Orb;
+
+typedef struct {
+    bool  active;
+    Vec2  pos;
+    f32   radius_x;
+    f32   radius_y;
+    f32   pulse_timer;
+    Vec2  spawn_pos;    // pre-selected random land position
+} Portal;
+
+typedef struct {
     Vec2 pos;
     f32  zoom;
 } Camera;
@@ -126,6 +144,11 @@ typedef struct {
     bool        water_blocks_movement;
     bool        terrain_ready;
     Camera      camera;
+    Orb         orbs[MAX_ORBS];
+    u32         num_orbs;
+    u32         orbs_collected;
+    Portal      portal;
+    bool        level_complete;
 } GameState;
 
 #endif
