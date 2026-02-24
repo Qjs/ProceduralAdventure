@@ -1,5 +1,6 @@
 #include "g_physics.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,7 +86,29 @@ static void g_phys_sync_unit_body(const Unit *u, b2BodyId body) {
         return;
     }
     b2Body_Enable(body);
-    b2Body_SetLinearVelocity(body, (b2Vec2){u->vel.x, u->vel.y});
+    // Preserve short-lived external impulses (e.g. knockback) on enemies,
+    // but keep normal AI steering snappy when there is no active impulse.
+    if (u->team == TEAM_ENEMY) {
+        b2Vec2 cur = b2Body_GetLinearVelocity(body);
+        b2Vec2 desired = (b2Vec2){u->vel.x, u->vel.y};
+        f32 dx = cur.x - desired.x;
+        f32 dy = cur.y - desired.y;
+        f32 mismatch = sqrtf(dx * dx + dy * dy);
+
+        const f32 impulse_threshold = 0.030f;
+        if (mismatch > impulse_threshold) {
+            const f32 ai_blend = 0.35f;
+            b2Vec2 blended = {
+                cur.x + (desired.x - cur.x) * ai_blend,
+                cur.y + (desired.y - cur.y) * ai_blend
+            };
+            b2Body_SetLinearVelocity(body, blended);
+        } else {
+            b2Body_SetLinearVelocity(body, desired);
+        }
+    } else {
+        b2Body_SetLinearVelocity(body, (b2Vec2){u->vel.x, u->vel.y});
+    }
 }
 
 static void g_phys_sync_body_to_unit(Unit *u, b2BodyId body) {
@@ -296,6 +319,29 @@ void g_physics_teleport_enemy(GameState *gs, u32 enemy_index) {
     b2Body_SetLinearVelocity(body, (b2Vec2){gs->enemies[enemy_index].vel.x, gs->enemies[enemy_index].vel.y});
 }
 
+void g_physics_apply_player_impulse(GameState *gs, Vec2 impulse) {
+    GPhysicsState *ps = gs->physics;
+    if (!ps) return;
+    if (!b2Body_IsValid(ps->player_body)) return;
+    b2Body_ApplyLinearImpulseToCenter(ps->player_body, (b2Vec2){impulse.x, impulse.y}, true);
+}
+
+void g_physics_apply_squad_impulse(GameState *gs, u32 squad_index, Vec2 impulse) {
+    GPhysicsState *ps = gs->physics;
+    if (!ps || squad_index >= gs->num_squad) return;
+    b2BodyId body = ps->squad_bodies[squad_index];
+    if (!b2Body_IsValid(body)) return;
+    b2Body_ApplyLinearImpulseToCenter(body, (b2Vec2){impulse.x, impulse.y}, true);
+}
+
+void g_physics_apply_enemy_impulse(GameState *gs, u32 enemy_index, Vec2 impulse) {
+    GPhysicsState *ps = gs->physics;
+    if (!ps || enemy_index >= gs->num_enemies) return;
+    b2BodyId body = ps->enemy_bodies[enemy_index];
+    if (!b2Body_IsValid(body)) return;
+    b2Body_ApplyLinearImpulseToCenter(body, (b2Vec2){impulse.x, impulse.y}, true);
+}
+
 #else
 
 typedef struct GPhysicsState {
@@ -348,6 +394,23 @@ void g_physics_teleport_squad(GameState *gs, u32 squad_index) {
 void g_physics_teleport_enemy(GameState *gs, u32 enemy_index) {
     (void)gs;
     (void)enemy_index;
+}
+
+void g_physics_apply_player_impulse(GameState *gs, Vec2 impulse) {
+    (void)gs;
+    (void)impulse;
+}
+
+void g_physics_apply_squad_impulse(GameState *gs, u32 squad_index, Vec2 impulse) {
+    (void)gs;
+    (void)squad_index;
+    (void)impulse;
+}
+
+void g_physics_apply_enemy_impulse(GameState *gs, u32 enemy_index, Vec2 impulse) {
+    (void)gs;
+    (void)enemy_index;
+    (void)impulse;
 }
 
 #endif

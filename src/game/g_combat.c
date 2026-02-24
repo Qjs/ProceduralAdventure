@@ -4,6 +4,29 @@
 #include "g_particles.h"
 #include "g_physics.h"
 
+static inline f32 clamp01f(f32 x) {
+    if (x < 0.0f) return 0.0f;
+    if (x > 1.0f) return 1.0f;
+    return x;
+}
+
+static inline f32 smoothstepf(f32 edge0, f32 edge1, f32 x) {
+    if (edge1 <= edge0) return x >= edge1 ? 1.0f : 0.0f;
+    f32 t = clamp01f((x - edge0) / (edge1 - edge0));
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static f32 archer_knockback_scale(const Unit *u) {
+    // Baseline archer cooldown at init is 0.8s.
+    const f32 base_cooldown = 0.8f;
+    if (u->cooldown <= 1e-5f) return 0.35f;
+    f32 ratio = u->cooldown / base_cooldown; // lower ratio => faster attacks
+    if (ratio >= 1.0f) return 1.0f;
+    // Taper knockback as attack speed increases, with a floor.
+    f32 s = smoothstepf(0.45f, 1.0f, ratio);
+    return 0.35f + 0.65f * s;
+}
+
 static f32 role_damage_multiplier(const GameState *gs, const Unit *u) {
     if (u->team != TEAM_PLAYER) return 1.0f;
     if (u->role == ROLE_MELEE && gs->melee_boost_timer > 0.0f) return 1.75f;
@@ -33,7 +56,8 @@ void g_combat_deal_damage(Unit *target, f32 damage, bool is_magic) {
 
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
                                 f32 damage, Team source_team, const u8 color[4],
-                                bool applies_slow, bool is_arrow, bool is_magic) {
+                                bool applies_slow, bool is_arrow, bool is_magic,
+                                f32 knockback_scale) {
     if (gs->num_projectiles >= MAX_PROJECTILES) return;
 
     Projectile *p = &gs->projectiles[gs->num_projectiles++];
@@ -41,6 +65,7 @@ void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
     p->pos = from;
     p->damage = damage;
     p->lifetime = 2.0f;
+    p->knockback_scale = knockback_scale;
     p->source_team = source_team;
     p->color[0] = color[0];
     p->color[1] = color[1];
@@ -58,11 +83,12 @@ void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
 
 static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
                                 const MapGraph *graph, Unit *u, f32 dt) {
-    if (!u->alive || u->state == STATE_DEAD || u->state == STATE_IDLE) return;
+    if (!u->alive || u->state == STATE_DEAD) return;
 
     u->cooldown_timer -= dt;
     if (u->cooldown_timer < 0.0f) u->cooldown_timer = 0.0f;
     if (u->cooldown_timer > 0.0f) return;
+    if (u->state == STATE_IDLE) return;
 
     if (u->state != STATE_ATTACK && u->state != STATE_HEAL) return;
 
@@ -158,6 +184,7 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         f32 dmg = u->damage * role_damage_multiplier(gs, u);
         bool slow = false;
         bool arrow = (u->role == ROLE_ARCHER || u->role == ROLE_ENEMY_RANGED);
+        f32 knockback_scale = 1.0f;
         static const u8 arrow_color[4] = {180, 180, 180, 255};
         const u8 *proj_color = arrow ? arrow_color : u->color;
 
@@ -173,8 +200,12 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
             }
         }
 
+        if (u->team == TEAM_PLAYER && u->role == ROLE_ARCHER) {
+            knockback_scale = archer_knockback_scale(u);
+        }
         bool magic = (u->role == ROLE_MAGE);
-        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow, arrow, magic);
+        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color,
+                                  slow, arrow, magic, knockback_scale);
     } else {
         // Melee hit
         f32 melee_damage = u->damage * role_damage_multiplier(gs, u);
@@ -307,13 +338,17 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                     // Archer Pushback: defensive stance knocks enemy back
                     if (p->is_arrow && gs->squad_stance == STANCE_DEFENSIVE && enemy->alive) {
                         Vec2 push_dir = vec2_normalize(p->vel);
-                        enemy->pos = vec2_add(enemy->pos, vec2_scale(push_dir, 0.015f));
-                        // Clamp to bounds
-                        if (enemy->pos.x < 0.0f) enemy->pos.x = 0.0f;
-                        if (enemy->pos.x > 1.0f) enemy->pos.x = 1.0f;
-                        if (enemy->pos.y < 0.0f) enemy->pos.y = 0.0f;
-                        if (enemy->pos.y > 1.0f) enemy->pos.y = 1.0f;
-                        g_physics_teleport_enemy(gs, e);
+                        if (g_physics_is_active(gs)) {
+                            g_physics_apply_enemy_impulse(gs, e, vec2_scale(push_dir, 0.0010f * p->knockback_scale));
+                        } else {
+                            enemy->pos = vec2_add(enemy->pos, vec2_scale(push_dir, 0.015f * p->knockback_scale));
+                            // Clamp to bounds
+                            if (enemy->pos.x < 0.0f) enemy->pos.x = 0.0f;
+                            if (enemy->pos.x > 1.0f) enemy->pos.x = 1.0f;
+                            if (enemy->pos.y < 0.0f) enemy->pos.y = 0.0f;
+                            if (enemy->pos.y > 1.0f) enemy->pos.y = 1.0f;
+                            g_physics_teleport_enemy(gs, e);
+                        }
                     }
 
                     // Archer Piercing: aggressive stance, arrow continues through first target

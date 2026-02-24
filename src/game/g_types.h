@@ -134,6 +134,7 @@ typedef struct {
     Vec2  vel;
     f32   damage;
     f32   lifetime;
+    f32   knockback_scale; // used by archer defensive pushback
     Team  source_team;
     u8    color[4];
     bool  applies_slow;  // mage defensive freeze projectile

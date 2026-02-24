@@ -162,6 +162,7 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                                       const MapGraph *graph, f32 dt) {
     (void)tg;
     (void)graph;
+    bool use_physics = g_physics_is_active(gs);
     if (gs->env_active_effect == ENV_EFFECT_NONE || gs->env_effect_timer <= 0.0f) {
         gs->env_active_effect = ENV_EFFECT_NONE;
         gs->env_effect_timer = 0.0f;
@@ -206,10 +207,13 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 ally->slow_timer = 0.8f;
 
                 Vec2 away = vec2_normalize(vec2_sub(impact, gs->env_boulder_from));
-                ally->vel = vec2_add(ally->vel, vec2_scale(away, 0.10f));
-
-                (void)ally_kind;
-                (void)ally_idx;
+                if (use_physics) {
+                    Vec2 impulse = vec2_scale(away, 0.055f);
+                    if (ally_kind == 0) g_physics_apply_player_impulse(gs, impulse);
+                    else g_physics_apply_squad_impulse(gs, ally_idx, impulse);
+                } else {
+                    ally->vel = vec2_add(ally->vel, vec2_scale(away, 0.10f));
+                }
             }
         }
     } else if (gs->env_active_effect == ENV_EFFECT_WAVE) {
@@ -220,7 +224,11 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
             if (gs->player.alive &&
                 gs->player.pos.y >= gs->env_view_min_y && gs->player.pos.y <= gs->env_view_max_y &&
                 fabsf(gs->player.pos.x - gs->env_wave_front) < band) {
-                gs->player.vel.x += gs->env_wave_dir * 0.10f;
+                if (use_physics) {
+                    g_physics_apply_player_impulse(gs, (Vec2){gs->env_wave_dir * 0.040f, 0.0f});
+                } else {
+                    gs->player.vel.x += gs->env_wave_dir * 0.10f;
+                }
                 gs->player.slow_timer = 0.7f;
                 g_combat_deal_damage(&gs->player, 4.0f, true);
             }
@@ -229,7 +237,11 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 if (!u->alive) continue;
                 if (u->pos.y >= gs->env_view_min_y && u->pos.y <= gs->env_view_max_y &&
                     fabsf(u->pos.x - gs->env_wave_front) < band) {
-                    u->vel.x += gs->env_wave_dir * 0.10f;
+                    if (use_physics) {
+                        g_physics_apply_squad_impulse(gs, i, (Vec2){gs->env_wave_dir * 0.040f, 0.0f});
+                    } else {
+                        u->vel.x += gs->env_wave_dir * 0.10f;
+                    }
                     u->slow_timer = 0.7f;
                     g_combat_deal_damage(u, 4.0f, true);
                 }
@@ -247,6 +259,13 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
             if (gs->player.alive && vec2_dist(gs->player.pos, gs->env_lava_pos) < gs->env_lava_radius) {
                 g_combat_deal_damage(&gs->player, 7.0f, true);
                 gs->player.slow_timer = 0.6f;
+                Vec2 push = vec2_normalize(vec2_sub(gs->player.pos, gs->env_lava_pos));
+                if (vec2_len(push) < 1e-5f) push = (Vec2){1.0f, 0.0f};
+                if (use_physics) {
+                    g_physics_apply_player_impulse(gs, vec2_scale(push, 0.030f));
+                } else {
+                    gs->player.vel = vec2_add(gs->player.vel, vec2_scale(push, 0.07f));
+                }
             }
             for (u32 i = 0; i < gs->num_squad; i++) {
                 Unit *u = &gs->squad[i];
@@ -254,6 +273,13 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 if (vec2_dist(u->pos, gs->env_lava_pos) < gs->env_lava_radius) {
                     g_combat_deal_damage(u, 7.0f, true);
                     u->slow_timer = 0.6f;
+                    Vec2 push = vec2_normalize(vec2_sub(u->pos, gs->env_lava_pos));
+                    if (vec2_len(push) < 1e-5f) push = (Vec2){1.0f, 0.0f};
+                    if (use_physics) {
+                        g_physics_apply_squad_impulse(gs, i, vec2_scale(push, 0.030f));
+                    } else {
+                        u->vel = vec2_add(u->vel, vec2_scale(push, 0.07f));
+                    }
                 }
             }
         }

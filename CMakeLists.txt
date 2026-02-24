@@ -64,6 +64,9 @@ add_executable(ProceduralAdventure
     src/game/g_terrain.c
     src/game/g_unit.c
     src/game/g_render.c
+    src/game/g_render_primitives.c
+    src/game/g_render_entities.c
+    src/game/g_render_effects.c
     src/game/g_enemy.c
     src/game/g_combat.c
     src/game/g_unit_gen.c

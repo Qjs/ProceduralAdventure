@@ -15,5 +15,8 @@ void g_physics_update_portal_sensor(GameState *gs);
 void g_physics_teleport_player(GameState *gs);
 void g_physics_teleport_squad(GameState *gs, u32 squad_index);
 void g_physics_teleport_enemy(GameState *gs, u32 enemy_index);
+void g_physics_apply_player_impulse(GameState *gs, Vec2 impulse);
+void g_physics_apply_squad_impulse(GameState *gs, u32 squad_index, Vec2 impulse);
+void g_physics_apply_enemy_impulse(GameState *gs, u32 enemy_index, Vec2 impulse);
 
 #endif
