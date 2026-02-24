@@ -10,3 +10,6 @@
 [submodule "lib/SDL"]
 	path = lib/SDL
 	url = https://github.com/libsdl-org/SDL.git
+[submodule "lib/box2d"]
+	path = lib/box2d
+	url = ../GravityBoost/lib/box2d

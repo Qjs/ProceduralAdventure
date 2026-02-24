@@ -2,6 +2,15 @@
 #include "g_unit.h"
 #include "g_terrain.h"
 #include "g_particles.h"
+#include "g_physics.h"
+
+static f32 role_damage_multiplier(const GameState *gs, const Unit *u) {
+    if (u->team != TEAM_PLAYER) return 1.0f;
+    if (u->role == ROLE_MELEE && gs->melee_boost_timer > 0.0f) return 1.75f;
+    if (u->role == ROLE_ARCHER && gs->archer_boost_timer > 0.0f) return 1.65f;
+    if (u->role == ROLE_MAGE && gs->mage_boost_timer > 0.0f) return 1.65f;
+    return 1.0f;
+}
 
 void g_combat_deal_damage(Unit *target, f32 damage, bool is_magic) {
     if (!target->alive) return;
@@ -146,7 +155,7 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
     u->cooldown_timer = u->cooldown;
 
     if (u->role == ROLE_ARCHER || u->role == ROLE_MAGE || u->role == ROLE_ENEMY_RANGED) {
-        f32 dmg = u->damage;
+        f32 dmg = u->damage * role_damage_multiplier(gs, u);
         bool slow = false;
         bool arrow = (u->role == ROLE_ARCHER || u->role == ROLE_ENEMY_RANGED);
         static const u8 arrow_color[4] = {180, 180, 180, 255};
@@ -168,9 +177,32 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow, arrow, magic);
     } else {
         // Melee hit
+        f32 melee_damage = u->damage * role_damage_multiplier(gs, u);
         static const u8 spark_color[4] = {220, 220, 230, 255};
         g_particles_slash(&gs->particles, target->pos, u->facing, spark_color);
-        g_combat_deal_damage(target, u->damage, false);
+        g_combat_deal_damage(target, melee_damage, false);
+
+        // Boss melee has strong knockback on player team.
+        if (u->team == TEAM_ENEMY && u->is_boss && target->alive) {
+            Vec2 push = vec2_normalize(vec2_sub(target->pos, u->pos));
+            if (vec2_len(push) < 1e-5f) push = (Vec2){1.0f, 0.0f};
+            Vec2 old_pos = target->pos;
+            Vec2 new_pos = vec2_add(target->pos, vec2_scale(push, 0.03f));
+            new_pos = g_unit_move_with_terrain(old_pos, new_pos, tg, graph, true);
+            target->pos = new_pos;
+            target->vel = vec2_add(target->vel, vec2_scale(push, 0.12f));
+
+            if (target == &gs->player) {
+                g_physics_teleport_player(gs);
+            } else {
+                for (u32 s = 0; s < gs->num_squad; s++) {
+                    if (&gs->squad[s] == target) {
+                        g_physics_teleport_squad(gs, s);
+                        break;
+                    }
+                }
+            }
+        }
         if (!target->alive) {
             g_particles_burst(&gs->particles, target->pos, 12, target->color);
             if (u->team == TEAM_PLAYER)
@@ -181,7 +213,7 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         if (u->role == ROLE_MELEE && u->team == TEAM_PLAYER &&
             gs->squad_stance == STANCE_AGGRESSIVE) {
             static const u8 cleave_color[4] = {255, 160, 60, 255};
-            f32 splash_dmg = u->damage * 0.5f;
+            f32 splash_dmg = melee_damage * 0.5f;
             for (u32 e = 0; e < gs->num_enemies; e++) {
                 Unit *other = &gs->enemies[e];
                 if (!other->alive || other == target) continue;
@@ -281,6 +313,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                         if (enemy->pos.x > 1.0f) enemy->pos.x = 1.0f;
                         if (enemy->pos.y < 0.0f) enemy->pos.y = 0.0f;
                         if (enemy->pos.y > 1.0f) enemy->pos.y = 1.0f;
+                        g_physics_teleport_enemy(gs, e);
                     }
 
                     // Archer Piercing: aggressive stance, arrow continues through first target

@@ -233,6 +233,16 @@ static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr,
     if (!orb->active) return;
     f32 pulse = (sinf(orb->pulse_timer * 3.0f) + 1.0f) * 0.5f; // 0..1
 
+    u8 cr = 140, cg = 210, cb = 255;
+    switch (orb->effect) {
+        case ORB_EFFECT_HEAL_BOOST:    cr = 120; cg = 240; cb = 120; break;
+        case ORB_EFFECT_MELEE_BOOST:   cr = 255; cg = 110; cb = 110; break;
+        case ORB_EFFECT_ARCHER_BOOST:  cr = 255; cg = 210; cb = 90;  break;
+        case ORB_EFFECT_MAGE_BOOST:    cr = 170; cg = 120; cb = 255; break;
+        case ORB_EFFECT_ENVIRONMENTAL: cr = 255; cg = 140; cb = 60;  break;
+        default: break;
+    }
+
     f32 cx = mr.x + orb->pos.x * mr.w;
     f32 cy = mr.y + orb->pos.y * mr.h;
     f32 core_r = orb->radius * mr.w;
@@ -241,7 +251,7 @@ static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr,
 
     // Outer light ring
     u8 ring_alpha = (u8)(50 + pulse * 50);
-    draw_ring(renderer, cx, cy, ring_inner, ring_outer, 140, 210, 255, ring_alpha);
+    draw_ring(renderer, cx, cy, ring_inner, ring_outer, cr, cg, cb, ring_alpha);
 
     // Core — textured swirly orb (rotates slowly)
     if (orb_tex) {
@@ -254,7 +264,7 @@ static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr,
         SDL_SetTextureAlphaModFloat(orb_tex, 1.0f);
     } else {
         u8 core_alpha = (u8)(180 + pulse * 75);
-        fill_circle(renderer, cx, cy, core_r, 140, 210, 255, core_alpha);
+        fill_circle(renderer, cx, cy, core_r, cr, cg, cb, core_alpha);
     }
 }
 
@@ -379,6 +389,36 @@ static void draw_projectile(SDL_Renderer *renderer, const Projectile *p, SDL_FRe
     SDL_RenderFillRect(renderer, &rect);
 }
 
+static void draw_environment_effect(SDL_Renderer *renderer, const GameState *gs, SDL_FRect mr) {
+    if (gs->env_active_effect == ENV_EFFECT_NONE) return;
+
+    if (gs->env_active_effect == ENV_EFFECT_WAVE) {
+        f32 sx = mr.x + gs->env_wave_front * mr.w;
+        f32 sy0 = mr.y + gs->env_view_min_y * mr.h;
+        f32 sy1 = mr.y + gs->env_view_max_y * mr.h;
+        f32 band = 0.03f * mr.w;
+        SDL_SetRenderDrawColor(renderer, 120, 190, 255, 90);
+        SDL_FRect rect = {sx - band, sy0, band * 2.0f, sy1 - sy0};
+        SDL_RenderFillRect(renderer, &rect);
+    } else if (gs->env_active_effect == ENV_EFFECT_LAVA) {
+        f32 cx = mr.x + gs->env_lava_pos.x * mr.w;
+        f32 cy = mr.y + gs->env_lava_pos.y * mr.h;
+        f32 r = gs->env_lava_radius * mr.w;
+        draw_ring(renderer, cx, cy, r * 0.75f, r, 255, 120, 40, 180);
+        fill_circle(renderer, cx, cy, r * 0.7f, 255, 90, 30, 90);
+    } else if (gs->env_active_effect == ENV_EFFECT_BOULDERS && gs->env_boulder_visible) {
+        Vec2 d = vec2_sub(gs->env_boulder_to, gs->env_boulder_from);
+        Vec2 p = vec2_add(gs->env_boulder_from, vec2_scale(d, gs->env_boulder_anim));
+        f32 x0 = mr.x + gs->env_boulder_from.x * mr.w;
+        f32 y0 = mr.y + gs->env_boulder_from.y * mr.h;
+        f32 x1 = mr.x + p.x * mr.w;
+        f32 y1 = mr.y + p.y * mr.h;
+        SDL_SetRenderDrawColor(renderer, 170, 160, 140, 200);
+        SDL_RenderLine(renderer, x0, y0, x1, y1);
+        fill_circle(renderer, x1, y1, 0.006f * mr.w, 160, 150, 130, 230);
+    }
+}
+
 void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
                    SDL_Texture *role_textures[ROLE_COUNT]) {
     // Orbs
@@ -388,6 +428,9 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
 
     // Portal
     draw_portal(renderer, &gs->portal, map_rect, gs->portal_texture);
+
+    // Active environmental effect overlay
+    draw_environment_effect(renderer, gs, map_rect);
 
     // Camp markers (faint circles)
     for (u32 i = 0; i < gs->num_camps; i++) {

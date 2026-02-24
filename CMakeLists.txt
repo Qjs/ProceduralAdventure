@@ -41,6 +41,13 @@ add_library(delaunator STATIC
 )
 target_include_directories(delaunator PUBLIC lib/delaunator-c)
 
+# Box2D submodule
+set(HAVE_BOX2D OFF)
+if(EXISTS ${CMAKE_SOURCE_DIR}/lib/box2d/CMakeLists.txt)
+    add_subdirectory(lib/box2d)
+    set(HAVE_BOX2D ON)
+endif()
+
 # SDL3Starter executable
 add_executable(ProceduralAdventure
     src/main.c
@@ -61,6 +68,7 @@ add_executable(ProceduralAdventure
     src/game/g_combat.c
     src/game/g_unit_gen.c
     src/game/g_particles.c
+    src/game/g_physics.c
 )
 
 target_include_directories(ProceduralAdventure PRIVATE
@@ -74,6 +82,11 @@ target_link_libraries(ProceduralAdventure PRIVATE
     delaunator
     m
 )
+
+if(HAVE_BOX2D)
+    target_compile_definitions(ProceduralAdventure PRIVATE HAVE_BOX2D=1)
+    target_link_libraries(ProceduralAdventure PRIVATE box2d)
+endif()
 
 if(EMSCRIPTEN)
     set_target_properties(ProceduralAdventure PROPERTIES SUFFIX ".html")

@@ -52,6 +52,7 @@ typedef struct {
     f32  land_threshold;
     f32  elevation_gamma;
     f32  snow_threshold;
+    bool boss_theme;
 } MapParams;
 
 typedef struct {

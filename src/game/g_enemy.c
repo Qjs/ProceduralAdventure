@@ -1,5 +1,6 @@
 #include "g_enemy.h"
 #include "g_unit.h"
+#include "g_physics.h"
 
 static u32 enemy_xorshift(u32 *state) {
     u32 x = *state;
@@ -116,6 +117,7 @@ void g_enemy_place_camps(GameState *gs, const TerrainGrid *tg, const MapGraph *g
 }
 
 void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph, f32 dt) {
+    bool use_physics = g_physics_is_active(gs);
     // Camp activation
     for (u32 c = 0; c < gs->num_camps; c++) {
         EnemyCamp *camp = &gs->camps[c];
@@ -157,7 +159,10 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
         // Tick slow timer
         if (e->slow_timer > 0.0f) e->slow_timer -= dt;
 
-        if (e->state == STATE_IDLE) continue;
+        if (e->state == STATE_IDLE) {
+            e->vel = (Vec2){0.0f, 0.0f};
+            continue;
+        }
 
         // Find nearest player-team unit
         u32 target = g_unit_find_nearest_enemy(gs, e);
@@ -198,6 +203,7 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
             // Move toward target
             move_target = target_pos;
         } else {
+            e->vel = (Vec2){0.0f, 0.0f};
             continue; // In range, combat system handles attacking
         }
 
@@ -210,7 +216,13 @@ void g_enemy_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
         if (e->slow_timer > 0.0f) speed *= 0.5f;
         if (speed < 0.01f) speed = 0.01f;
 
+        Vec2 old_pos = e->pos;
         Vec2 new_pos = vec2_add(e->pos, vec2_scale(dir, speed * dt));
-        e->pos = g_unit_move_with_terrain(e->pos, new_pos, tg, graph, true);
+        new_pos = g_unit_move_with_terrain(e->pos, new_pos, tg, graph, true);
+        if (dt > 1e-6f)
+            e->vel = vec2_scale(vec2_sub(new_pos, old_pos), 1.0f / dt);
+        else
+            e->vel = (Vec2){0.0f, 0.0f};
+        if (!use_physics) e->pos = new_pos;
     }
 }

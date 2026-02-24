@@ -24,6 +24,7 @@ void mg_map_init(Map *map) {
         .land_threshold = 0.45f,
         .elevation_gamma = 0.8f,
         .snow_threshold  = 0.75f,
+        .boss_theme = false,
     };
 }
 

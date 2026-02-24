@@ -74,6 +74,21 @@ typedef enum {
     STANCE_PASSIVE
 } SquadStance;
 
+typedef enum {
+    ORB_EFFECT_HEAL_BOOST,
+    ORB_EFFECT_MELEE_BOOST,
+    ORB_EFFECT_ARCHER_BOOST,
+    ORB_EFFECT_MAGE_BOOST,
+    ORB_EFFECT_ENVIRONMENTAL
+} OrbEffect;
+
+typedef enum {
+    ENV_EFFECT_NONE,
+    ENV_EFFECT_BOULDERS,
+    ENV_EFFECT_WAVE,
+    ENV_EFFECT_LAVA
+} EnvironmentalEffect;
+
 /* ---- Structs ---- */
 
 typedef struct {
@@ -89,6 +104,7 @@ typedef struct {
 
 typedef struct {
     bool      alive;
+    bool      is_boss;
     UnitRole  role;
     Team      team;
     UnitState state;
@@ -141,6 +157,7 @@ typedef struct {
     Vec2  pos;
     f32   radius;
     f32   pulse_timer;
+    OrbEffect effect;
 } Orb;
 
 typedef struct {
@@ -157,6 +174,8 @@ typedef struct {
     f32  zoom;
 } Camera;
 
+typedef struct GPhysicsState GPhysicsState;
+
 typedef struct {
     Unit        player;
     Unit        squad[MAX_SQUAD];
@@ -167,6 +186,9 @@ typedef struct {
     u32         num_projectiles;
     EnemyCamp   camps[MAX_CAMPS];
     u32         num_camps;
+    bool        is_boss_level;
+    bool        boss_spawned;
+    u32         boss_enemy_index;
     f32         elevation_speed_factor;
     bool        water_blocks_movement;
     bool        terrain_ready;
@@ -174,11 +196,33 @@ typedef struct {
     Orb         orbs[MAX_ORBS];
     u32         num_orbs;
     u32         orbs_collected;
+    f32         melee_boost_timer;
+    f32         archer_boost_timer;
+    f32         mage_boost_timer;
+    EnvironmentalEffect env_orb_effect;
+    EnvironmentalEffect env_active_effect;
+    f32         env_effect_timer;
+    f32         env_tick_timer;
+    f32         env_wave_front;
+    f32         env_wave_dir;
+    f32         env_view_min_x;
+    f32         env_view_max_x;
+    f32         env_view_min_y;
+    f32         env_view_max_y;
+    Vec2        env_peak_pos;
+    Vec2        env_lava_pos;
+    f32         env_lava_radius;
+    Vec2        env_boulder_from;
+    Vec2        env_boulder_to;
+    f32         env_boulder_anim;
+    bool        env_boulder_visible;
+    u32         effect_rng;
     Portal      portal;
     bool        level_complete;
     SquadStance squad_stance;
     u32         enemies_killed;
     ParticleSystem particles;
+    GPhysicsState *physics;
     SDL_Texture *role_textures[ROLE_COUNT];
     SDL_Texture *orb_texture;
     SDL_Texture *portal_texture;

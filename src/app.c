@@ -10,6 +10,20 @@ static f64 get_time_seconds(void) {
     return (f64)SDL_GetPerformanceCounter() / (f64)SDL_GetPerformanceFrequency();
 }
 
+static const char *env_effect_name(EnvironmentalEffect e) {
+    switch (e) {
+        case ENV_EFFECT_BOULDERS: return "Boulders";
+        case ENV_EFFECT_WAVE:     return "Wave";
+        case ENV_EFFECT_LAVA:     return "Lava Patch";
+        case ENV_EFFECT_NONE:
+        default:                  return "None";
+    }
+}
+
+static bool is_boss_level_index(u32 level) {
+    return ((level + 1) % 5) == 0;
+}
+
 bool app_init(App *app, const char *title, int w, int h) {
     memset(app, 0, sizeof(*app));
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -42,6 +56,7 @@ bool app_init(App *app, const char *title, int w, int h) {
 
     // Initialize and generate map
     mg_map_init(&app->map);
+    app->map.params.boss_theme = is_boss_level_index(app->level);
     mg_map_generate(&app->map);
     app->map_texture = NULL;
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
@@ -103,6 +118,7 @@ void app_update(App *app) {
 
         app->level++;
         app->map.params.seed++;
+        app->map.params.boss_theme = is_boss_level_index(app->level);
         mg_map_generate(&app->map);
         if (app->map_texture) {
             SDL_DestroyTexture(app->map_texture);
@@ -197,6 +213,7 @@ void app_render(App *app) {
     if (app->show_player_status) {
         if (igCollapsingHeader_TreeNodeFlags("Player Status", ImGuiTreeNodeFlags_DefaultOpen)) {
             Unit *player = &app->game.state.player;
+            GameState *gs = &app->game.state;
             float hp_frac = player->hp / player->max_hp;
             if (hp_frac < 0.0f) hp_frac = 0.0f;
             if (hp_frac > 1.0f) hp_frac = 1.0f;
@@ -222,6 +239,34 @@ void app_render(App *app) {
 
             igText("Pos: (%.2f, %.2f)", player->pos.x, player->pos.y);
             igText("Level: %u  Orbs: %u / %u", app->level + 1, app->game.state.orbs_collected, NUM_COLLECT_ORBS);
+
+            igSpacing();
+            igSeparatorText("Active Effects");
+            bool any_effect = false;
+            if (gs->melee_boost_timer > 0.0f) {
+                igTextColored((ImVec4_c){1.0f, 0.45f, 0.45f, 1.0f},
+                              "Melee Boost: %.1fs", gs->melee_boost_timer);
+                any_effect = true;
+            }
+            if (gs->archer_boost_timer > 0.0f) {
+                igTextColored((ImVec4_c){1.0f, 0.8f, 0.4f, 1.0f},
+                              "Archer Boost: %.1fs", gs->archer_boost_timer);
+                any_effect = true;
+            }
+            if (gs->mage_boost_timer > 0.0f) {
+                igTextColored((ImVec4_c){0.7f, 0.5f, 1.0f, 1.0f},
+                              "Mage Boost: %.1fs", gs->mage_boost_timer);
+                any_effect = true;
+            }
+            if (gs->env_active_effect != ENV_EFFECT_NONE) {
+                igTextColored((ImVec4_c){1.0f, 0.6f, 0.3f, 1.0f},
+                              "Hazard (%s): %.1fs",
+                              env_effect_name(gs->env_active_effect), gs->env_effect_timer);
+                any_effect = true;
+            }
+            if (!any_effect) {
+                igTextDisabled("No active boosts");
+            }
         }
     }
 
@@ -447,6 +492,7 @@ void app_render(App *app) {
 
     // Handle regeneration
     if (regenerate) {
+        app->map.params.boss_theme = is_boss_level_index(app->level);
         mg_map_generate(&app->map);
         if (app->map_texture) {
             SDL_DestroyTexture(app->map_texture);

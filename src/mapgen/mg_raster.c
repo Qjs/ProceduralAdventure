@@ -88,35 +88,70 @@ void mg_rasterize(Map *map) {
 
             Center *c = &g->centers[best_idx];
             u32 col;
-            if (c->water) {
-                // Ocean: deeper = darker blue
-                col = pack_rgba(30, 50, 120, 255);
-            } else if (c->coast) {
-                col = pack_rgba(210, 190, 130, 255);
-            } else {
-                f32 e = c->elevation;
-                if (e >= snow_thresh) {
-                    // Snow: lerp white from snow_thresh to 1.0
-                    f32 t = (e - snow_thresh) / (1.0f - snow_thresh + 0.001f);
-                    if (t > 1.0f) t = 1.0f;
-                    u8 base = (u8)(200 + t * 55);
-                    col = pack_rgba(base, base, base, 255);
-                } else if (e >= snow_thresh * 0.7f) {
-                    // Rocky/mountain: grey-brown
-                    f32 t = (e - snow_thresh * 0.7f) / (snow_thresh * 0.3f + 0.001f);
-                    if (t > 1.0f) t = 1.0f;
-                    u8 r = (u8)(120 + t * 60);
-                    u8 gr = (u8)(110 + t * 50);
-                    u8 b = (u8)(90 + t * 50);
-                    col = pack_rgba(r, gr, b, 255);
+            if (map->params.boss_theme) {
+                if (c->water) {
+                    col = pack_rgba(35, 35, 42, 255);
+                } else if (c->coast) {
+                    col = pack_rgba(85, 72, 70, 255);
                 } else {
-                    // Land: low=green, mid=darker green/brown
-                    f32 t = e / (snow_thresh * 0.7f + 0.001f);
-                    if (t > 1.0f) t = 1.0f;
-                    u8 r = (u8)(60 + t * 60);
-                    u8 gr = (u8)(140 - t * 30);
-                    u8 b = (u8)(40 + t * 50);
-                    col = pack_rgba(r, gr, b, 255);
+                    f32 e = c->elevation;
+                    if (e >= snow_thresh) {
+                        f32 t = (e - snow_thresh) / (1.0f - snow_thresh + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 r = (u8)(90 + t * 40);
+                        u8 g = (u8)(85 + t * 30);
+                        u8 b = (u8)(90 + t * 35);
+                        col = pack_rgba(r, g, b, 255);
+                    } else if (e >= snow_thresh * 0.7f) {
+                        f32 t = (e - snow_thresh * 0.7f) / (snow_thresh * 0.3f + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 r = (u8)(70 + t * 50);
+                        u8 g = (u8)(62 + t * 36);
+                        u8 b = (u8)(64 + t * 38);
+                        col = pack_rgba(r, g, b, 255);
+                    } else {
+                        f32 t = e / (snow_thresh * 0.7f + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 r = (u8)(52 + t * 36);
+                        u8 g = (u8)(50 + t * 26);
+                        u8 b = (u8)(54 + t * 30);
+                        if (e > 0.42f && e < 0.62f) {
+                            r = (u8)(r + 25);
+                        }
+                        col = pack_rgba(r, g, b, 255);
+                    }
+                }
+            } else {
+                if (c->water) {
+                    // Ocean: deeper = darker blue
+                    col = pack_rgba(30, 50, 120, 255);
+                } else if (c->coast) {
+                    col = pack_rgba(210, 190, 130, 255);
+                } else {
+                    f32 e = c->elevation;
+                    if (e >= snow_thresh) {
+                        // Snow: lerp white from snow_thresh to 1.0
+                        f32 t = (e - snow_thresh) / (1.0f - snow_thresh + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 base = (u8)(200 + t * 55);
+                        col = pack_rgba(base, base, base, 255);
+                    } else if (e >= snow_thresh * 0.7f) {
+                        // Rocky/mountain: grey-brown
+                        f32 t = (e - snow_thresh * 0.7f) / (snow_thresh * 0.3f + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 r = (u8)(120 + t * 60);
+                        u8 gr = (u8)(110 + t * 50);
+                        u8 b = (u8)(90 + t * 50);
+                        col = pack_rgba(r, gr, b, 255);
+                    } else {
+                        // Land: low=green, mid=darker green/brown
+                        f32 t = e / (snow_thresh * 0.7f + 0.001f);
+                        if (t > 1.0f) t = 1.0f;
+                        u8 r = (u8)(60 + t * 60);
+                        u8 gr = (u8)(140 - t * 30);
+                        u8 b = (u8)(40 + t * 50);
+                        col = pack_rgba(r, gr, b, 255);
+                    }
                 }
             }
             map->pixels[py * w + px] = col;
