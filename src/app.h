@@ -27,6 +27,7 @@ typedef struct {
     u32           level;
     Progression   progression;
     bool          upgrading;
+    bool          show_intro;
 
     // UI toggle state
     bool          show_map_gen;

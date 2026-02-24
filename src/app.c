@@ -24,6 +24,43 @@ static bool is_boss_level_index(u32 level) {
     return ((level + 1) % 5) == 0;
 }
 
+static void apply_custom_imgui_style(void) {
+    ImGuiStyle *style = igGetStyle();
+    style->WindowRounding = 8.0f;
+    style->FrameRounding = 6.0f;
+    style->GrabRounding = 6.0f;
+    style->ScrollbarRounding = 6.0f;
+    style->FrameBorderSize = 1.0f;
+    style->WindowBorderSize = 1.0f;
+    style->ItemSpacing = (ImVec2){8.0f, 6.0f};
+    style->FramePadding = (ImVec2){8.0f, 6.0f};
+
+    ImVec4 *c = style->Colors;
+    // Replace default blue accents with warm bronze/red tones.
+    c[ImGuiCol_WindowBg]         = (ImVec4){0.09f, 0.09f, 0.10f, 0.97f};
+    c[ImGuiCol_ChildBg]          = (ImVec4){0.12f, 0.11f, 0.11f, 0.80f};
+    c[ImGuiCol_PopupBg]          = (ImVec4){0.12f, 0.10f, 0.10f, 0.98f};
+    c[ImGuiCol_Border]           = (ImVec4){0.42f, 0.27f, 0.20f, 0.65f};
+    c[ImGuiCol_FrameBg]          = (ImVec4){0.17f, 0.14f, 0.13f, 0.90f};
+    c[ImGuiCol_FrameBgHovered]   = (ImVec4){0.31f, 0.20f, 0.16f, 0.95f};
+    c[ImGuiCol_FrameBgActive]    = (ImVec4){0.40f, 0.23f, 0.18f, 1.00f};
+    c[ImGuiCol_TitleBg]          = (ImVec4){0.14f, 0.11f, 0.10f, 1.00f};
+    c[ImGuiCol_TitleBgActive]    = (ImVec4){0.23f, 0.15f, 0.12f, 1.00f};
+    c[ImGuiCol_Header]           = (ImVec4){0.30f, 0.19f, 0.15f, 0.85f};
+    c[ImGuiCol_HeaderHovered]    = (ImVec4){0.45f, 0.27f, 0.19f, 0.95f};
+    c[ImGuiCol_HeaderActive]     = (ImVec4){0.52f, 0.29f, 0.20f, 1.00f};
+    // Dropdown arrow block uses button colors; make it distinct from standard dark themes.
+    c[ImGuiCol_Button]           = (ImVec4){0.42f, 0.22f, 0.16f, 0.88f};
+    c[ImGuiCol_ButtonHovered]    = (ImVec4){0.58f, 0.31f, 0.20f, 0.95f};
+    c[ImGuiCol_ButtonActive]     = (ImVec4){0.66f, 0.35f, 0.23f, 1.00f};
+    c[ImGuiCol_CheckMark]        = (ImVec4){0.92f, 0.74f, 0.44f, 1.00f};
+    c[ImGuiCol_SliderGrab]       = (ImVec4){0.76f, 0.44f, 0.25f, 0.95f};
+    c[ImGuiCol_SliderGrabActive] = (ImVec4){0.88f, 0.54f, 0.30f, 1.00f};
+    c[ImGuiCol_Separator]        = (ImVec4){0.45f, 0.30f, 0.22f, 0.60f};
+    c[ImGuiCol_SeparatorHovered] = (ImVec4){0.63f, 0.40f, 0.25f, 0.80f};
+    c[ImGuiCol_SeparatorActive]  = (ImVec4){0.72f, 0.46f, 0.28f, 0.95f};
+}
+
 bool app_init(App *app, const char *title, int w, int h) {
     memset(app, 0, sizeof(*app));
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -47,6 +84,7 @@ bool app_init(App *app, const char *title, int w, int h) {
         SDL_Log("ImGui_SDL3_Init failed");
         return false;
     }
+    apply_custom_imgui_style();
 
     app->running = true;
     app->bg[0] = 0.1f;
@@ -63,7 +101,8 @@ bool app_init(App *app, const char *title, int w, int h) {
 
     // Initialize game state
     g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
-    app->upgrading = true;
+    app->upgrading = false;
+    app->show_intro = true;
 
     // Initialize timing
     app->last_time = get_time_seconds();
@@ -104,8 +143,8 @@ void app_update(App *app) {
     app->last_time = now;
     if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
 
-    // Pause game while on upgrade screen
-    if (app->upgrading) return;
+    // Pause game while on intro / upgrade modal
+    if (app->upgrading || app->show_intro) return;
 
     g_game_update(&app->game, &app->map.graph, app->dt);
 
@@ -127,6 +166,7 @@ void app_update(App *app) {
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
         g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
         app->upgrading = true;
+        app->show_intro = false;
     }
 }
 
@@ -437,6 +477,32 @@ void app_render(App *app) {
     }
 
     igEnd();
+
+    // ---- Intro modal (startup only) ----
+    if (app->show_intro) {
+        ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
+        igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
+        igSetNextWindowSize((ImVec2_c){520, 0}, ImGuiCond_Always);
+
+        ImGuiWindowFlags intro_flags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+
+        igBegin("Welcome to Procedural Adventure", NULL, intro_flags);
+        igTextWrapped("Lead your squad across a procedural island, collect 5 orbs, and enter the portal to advance.");
+        igSpacing();
+        igBulletText("Move with WASD / Arrow Keys");
+        igBulletText("Switch squad stance with [1] Aggressive, [2] Defensive, [3] Passive");
+        igBulletText("Companions: Melee, Archer, Healer, Mage (each changes behavior by stance)");
+        igBulletText("Every 5th level: collect orbs, then defeat a boss to unlock the portal");
+        igSpacing();
+        igTextWrapped("Tip: stance switching is your strongest tactical tool.");
+        igSeparator();
+        if (igButton("Begin Adventure", (ImVec2_c){-1, 36})) {
+            app->show_intro = false;
+        }
+        igEnd();
+    }
 
     // ---- Upgrade screen modal ----
     if (app->upgrading) {
