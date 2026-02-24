@@ -28,6 +28,8 @@ typedef struct {
     Progression   progression;
     bool          upgrading;
     bool          show_intro;
+    bool          paused;
+    bool          game_over;
 
     // UI toggle state
     bool          show_map_gen;

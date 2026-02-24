@@ -25,6 +25,25 @@ static bool is_boss_level_index(u32 level) {
     return ((level + 1) % 5) == 0;
 }
 
+static void restart_game(App *app) {
+    app->level = 0;
+    memset(&app->progression, 0, sizeof(app->progression));
+    app->map.params.seed = (u32)time(NULL) % 1001;
+    app->map.params.boss_theme = is_boss_level_index(app->level);
+    app->map.lava_rivers = is_boss_level_index(app->level);
+    mg_map_generate(&app->map);
+    if (app->map_texture) {
+        SDL_DestroyTexture(app->map_texture);
+        app->map_texture = NULL;
+    }
+    mg_upload_texture(&app->map, app->renderer, &app->map_texture);
+    g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+    app->paused = false;
+    app->game_over = false;
+    app->upgrading = false;
+    app->show_intro = true;
+}
+
 static void apply_custom_imgui_style(void) {
     ImGuiStyle *style = igGetStyle();
     style->WindowRounding = 8.0f;
@@ -140,6 +159,11 @@ void app_process_events(App *app) {
         if (event.type == SDL_EVENT_QUIT) {
             app->running = false;
         }
+        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
+            if (!app->show_intro && !app->upgrading && !app->game_over) {
+                app->paused = !app->paused;
+            }
+        }
     }
 }
 
@@ -150,10 +174,16 @@ void app_update(App *app) {
     app->last_time = now;
     if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
 
-    // Pause game while on intro / upgrade modal
-    if (app->upgrading || app->show_intro) return;
+    // Pause game while on intro / upgrade / pause / game-over modal
+    if (app->upgrading || app->show_intro || app->paused || app->game_over) return;
 
     g_game_update(&app->game, &app->map, app->dt);
+
+    // Check for player death
+    if (!app->game.state.player.alive) {
+        app->game_over = true;
+        return;
+    }
 
     // Level transition — tally XP, regenerate map, show upgrade screen
     if (app->game.state.level_complete) {
@@ -569,6 +599,53 @@ void app_render(App *app) {
             g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
         }
 
+        igEnd();
+    }
+
+    // ---- Pause modal ----
+    if (app->paused) {
+        ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
+        igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
+        igSetNextWindowSize((ImVec2_c){320, 0}, ImGuiCond_Always);
+
+        ImGuiWindowFlags pause_flags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+
+        igBegin("Paused", NULL, pause_flags);
+        igText("Game Paused");
+        igSpacing();
+        if (igButton("Resume", (ImVec2_c){-1, 36})) {
+            app->paused = false;
+        }
+        if (igButton("Restart Game", (ImVec2_c){-1, 36})) {
+            restart_game(app);
+        }
+        igEnd();
+    }
+
+    // ---- Game Over modal ----
+    if (app->game_over) {
+        ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
+        igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
+        igSetNextWindowSize((ImVec2_c){380, 0}, ImGuiCond_Always);
+
+        ImGuiWindowFlags go_flags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+
+        igBegin("Game Over", NULL, go_flags);
+        igTextColored((ImVec4_c){1.0f, 0.3f, 0.3f, 1.0f}, "You have fallen!");
+        igSpacing();
+        igSeparator();
+        igText("Level Reached: %u", app->level + 1);
+        igText("Enemies Killed: %u", app->game.state.enemies_killed);
+        igText("Total XP Earned: %u", app->progression.total_xp);
+        igSeparator();
+        igSpacing();
+        if (igButton("Restart Game", (ImVec2_c){-1, 36})) {
+            restart_game(app);
+        }
         igEnd();
     }
 
