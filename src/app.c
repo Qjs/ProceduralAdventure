@@ -70,7 +70,7 @@ bool app_init(App *app, const char *title, int w, int h) {
     app->dt = 0.0;
 
     // UI defaults
-    app->show_map_gen = true;
+    app->show_map_gen = false;
     app->show_player_status = true;
     app->show_minimap = true;
 
@@ -246,6 +246,7 @@ void app_render(App *app) {
 
             igText("Pos: (%.2f, %.2f)", player->pos.x, player->pos.y);
             igText("Level: %u  Orbs: %u / %u", app->level + 1, app->game.state.orbs_collected, NUM_COLLECT_ORBS);
+            igText("XP: %u  Total XP: %u", app->progression.xp, app->progression.total_xp);
 
             igSpacing();
             igSeparatorText("Active Effects");
