@@ -8,52 +8,69 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      background: #0a0a12;
-      color: #c8d0e0;
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(1200px 700px at 50% -20%, #1a2740 0%, #0a0a12 55%);
+      color: #d8deea;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
+      padding: 1rem;
       overflow: hidden;
     }
 
-    h1 {
-      font-size: 1.6rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      color: #e0e8f8;
+    #topbar {
+      width: min(96vw, 1320px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
       margin-bottom: 0.5rem;
+      user-select: none;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #eef4ff;
     }
 
     #canvas-container {
       position: relative;
-      border: 2px solid #1e2a40;
-      border-radius: 6px;
+      border: 1px solid #2a3552;
+      border-radius: 10px;
       overflow: hidden;
-      box-shadow: 0 0 30px rgba(40, 80, 160, 0.15);
+      box-shadow: 0 14px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(90, 120, 180, 0.15);
+      width: min(96vw, 1320px);
+      aspect-ratio: 16 / 9;
+      background: #070a13;
     }
 
     canvas.emscripten {
       display: block;
-      width: 1280px;
-      height: 720px;
+      width: 100%;
+      height: 100%;
       background: #0a0a12;
+      outline: none;
     }
 
     #status-bar {
-      margin-top: 0.5rem;
-      font-size: 0.8rem;
-      color: #606878;
-      height: 1.2rem;
+      width: min(96vw, 1320px);
+      margin-top: 0.45rem;
+      font-size: 0.85rem;
+      color: #98a3b8;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
     }
 
     /* Loading overlay */
     #loading-overlay {
       position: absolute;
       inset: 0;
-      background: #0a0a12;
+      background: linear-gradient(180deg, rgba(8, 12, 22, 0.95), rgba(10, 12, 18, 0.98));
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -69,14 +86,15 @@
 
     #loading-text {
       font-size: 0.9rem;
-      color: #8090b0;
+      color: #a8b4cf;
       margin-bottom: 1rem;
     }
 
     #progress-bar-outer {
-      width: 240px;
-      height: 4px;
-      background: #1a1a2e;
+      width: 300px;
+      max-width: 70vw;
+      height: 6px;
+      background: #151b2e;
       border-radius: 2px;
       overflow: hidden;
     }
@@ -84,34 +102,120 @@
     #progress-bar-inner {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #4060c0, #60a0f0);
+      background: linear-gradient(90deg, #4368ce, #69b0ff);
       border-radius: 2px;
       transition: width 0.2s ease;
+    }
+
+    .btnrow {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    button {
+      border: 1px solid #314469;
+      background: linear-gradient(180deg, #1a2842, #152138);
+      color: #dfe8fb;
+      border-radius: 6px;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover { border-color: #4d6aa5; }
+    button:active { transform: translateY(1px); }
+
+    #hint {
+      opacity: 0.85;
     }
   </style>
 </head>
 <body>
-  <h1>GravityBoost</h1>
+  <div id="topbar">
+    <h1>Procedural Adventure (Web)</h1>
+    <div class="btnrow">
+      <button id="focus-btn" type="button">Focus</button>
+      <button id="fs-btn" type="button">Fullscreen</button>
+    </div>
+  </div>
 
   <div id="canvas-container">
-    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="1280" height="720"></canvas>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="0" width="1280" height="720"></canvas>
     <div id="loading-overlay">
-      <div id="loading-text">Loading...</div>
+      <div id="loading-text">Preparing world...</div>
       <div id="progress-bar-outer">
         <div id="progress-bar-inner"></div>
       </div>
     </div>
   </div>
 
-  <div id="status-bar"></div>
+  <div id="status-bar">
+    <span id="status-text">Booting...</span>
+    <span id="hint">WASD / Arrows to move, 1-2-3 for stances</span>
+  </div>
 
   <script>
-    var statusEl = document.getElementById('status-bar');
-    var progressInner = document.getElementById('progress-bar-inner');
-    var loadingOverlay = document.getElementById('loading-overlay');
+    const statusEl = document.getElementById('status-text');
+    const progressInner = document.getElementById('progress-bar-inner');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+    const canvas = document.getElementById('canvas');
+    const container = document.getElementById('canvas-container');
+    const focusBtn = document.getElementById('focus-btn');
+    const fsBtn = document.getElementById('fs-btn');
+    let runtimeReady = false;
+    let resizeRaf = 0;
+
+    function syncCanvasSize() {
+      resizeRaf = 0;
+      const rect = container.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const targetW = Math.max(320, Math.round(rect.width * dpr));
+      const targetH = Math.max(180, Math.round(rect.height * dpr));
+      if (runtimeReady && typeof Module.setCanvasSize === 'function') {
+        Module.setCanvasSize(targetW, targetH);
+      } else if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+    }
+
+    function scheduleCanvasSync() {
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(syncCanvasSize);
+    }
+
+    function setLoadingDone() {
+      loadingOverlay.classList.add('hidden');
+      statusEl.textContent = 'Ready';
+      scheduleCanvasSync();
+      canvas.focus();
+    }
+
+    function requestFullscreen() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        container.requestFullscreen().catch(() => {});
+      }
+    }
+
+    focusBtn.addEventListener('click', () => canvas.focus());
+    fsBtn.addEventListener('click', requestFullscreen);
+    canvas.addEventListener('click', () => canvas.focus());
+    window.addEventListener('resize', scheduleCanvasSync);
+    document.addEventListener('fullscreenchange', scheduleCanvasSync);
+
+    // Prevent arrow/space keys from scrolling page while playing.
+    window.addEventListener('keydown', (ev) => {
+      const blockKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '];
+      if (blockKeys.includes(ev.key)) ev.preventDefault();
+    }, { passive: false });
 
     var Module = {
-      canvas: (function() { return document.getElementById('canvas'); })(),
+      canvas: canvas,
       setStatus: function(text) {
         statusEl.textContent = text;
         // Parse progress from text like "Downloading data... (X/Y)"
@@ -119,10 +223,12 @@
         if (m) {
           var pct = (parseFloat(m[2]) / parseFloat(m[4])) * 100;
           progressInner.style.width = pct + '%';
+          loadingText.textContent = m[1].trim() + ' ' + Math.floor(pct) + '%';
+        } else if (text) {
+          loadingText.textContent = text;
         }
         if (text === '') {
-          // Done loading
-          loadingOverlay.classList.add('hidden');
+          setLoadingDone();
         }
       },
       totalDependencies: 0,
@@ -135,23 +241,24 @@
         }
       },
       onRuntimeInitialized: function() {
-        // Fallback: hide overlay once WASM runtime is ready
-        // (covers cases where monitorRunDependencies never fires with 0)
+        runtimeReady = true;
+        scheduleCanvasSync();
         Module.setStatus('');
+      },
+      preRun: [function() {
+        scheduleCanvasSync();
+      }],
+      printErr: function(text) {
+        console.error(text);
       }
     };
 
     Module.setStatus('Loading...');
 
-    // Fallback: force-hide overlay after 3 seconds regardless
-    setTimeout(function() {
-      loadingOverlay.classList.add('hidden');
-    }, 3000);
-
     window.onerror = function(msg) {
       console.error('window.onerror:', msg);
       Module.setStatus('Error — see browser console');
-      loadingOverlay.querySelector('#loading-text').textContent = 'Error loading — see console';
+      loadingText.textContent = 'Error loading — check console';
     };
   </script>
   {{{ SCRIPT }}}
