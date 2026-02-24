@@ -4,6 +4,12 @@
 
 #define CIRCLE_SEGMENTS 24
 
+static inline f32 clamp01f(f32 x) {
+    if (x < 0.0f) return 0.0f;
+    if (x > 1.0f) return 1.0f;
+    return x;
+}
+
 // Forward declarations
 static void fill_circle(SDL_Renderer *renderer, f32 cx, f32 cy, f32 radius,
                         u8 r, u8 g, u8 b, u8 a);
@@ -419,6 +425,105 @@ static void draw_environment_effect(SDL_Renderer *renderer, const GameState *gs,
     }
 }
 
+static void draw_squad_layered(SDL_Renderer *renderer, const GameState *gs, const Unit *u,
+                               SDL_FRect map_rect, SDL_Texture *role_tex) {
+    if (!u->alive) return;
+
+    f32 t = (f32)SDL_GetTicks() * 0.001f;
+    f32 r = u->radius * map_rect.w;
+    f32 cx = map_rect.x + u->pos.x * map_rect.w;
+    f32 cy = map_rect.y + u->pos.y * map_rect.h;
+    f32 facing = u->facing;
+    f32 cs = cosf(facing), sn = sinf(facing);
+    f32 px = -sn, py = cs;
+
+    f32 speed_norm = clamp01f(vec2_len(u->vel) / (u->speed * 1.5f + 1e-3f));
+    f32 phase = (f32)u->role * 1.31f + (u->pos.x + u->pos.y) * 7.0f;
+    f32 stride = sinf(t * 11.0f + phase) * speed_norm;
+    f32 bob = sinf(t * 5.0f + phase) * r * 0.05f + stride * r * 0.04f;
+    cy += bob;
+
+    // Shadow
+    fill_ellipse(renderer, cx, cy + r * 0.9f, r * 0.95f, r * 0.4f, 18, 18, 22, 105);
+
+    // Stance-driven aura (subtle, always behind)
+    if (gs->squad_stance == STANCE_AGGRESSIVE) {
+        draw_ring(renderer, cx, cy, r * 1.02f, r * 1.12f, 255, 130, 60, 40);
+    } else if (gs->squad_stance == STANCE_DEFENSIVE) {
+        draw_ring(renderer, cx, cy, r * 1.04f, r * 1.14f, 110, 165, 255, 42);
+    } else {
+        draw_ring(renderer, cx, cy, r * 1.05f, r * 1.15f, 130, 230, 170, 38);
+    }
+
+    // Role-specific back layer
+    if (u->role == ROLE_MAGE) {
+        fill_ellipse(renderer, cx - cs * r * 0.2f, cy - sn * r * 0.2f + r * 0.1f,
+                     r * 0.9f, r * 0.7f, 60, 45, 120, 120);
+    } else if (u->role == ROLE_HEALER) {
+        draw_ring(renderer, cx, cy - r * 0.7f, r * 0.18f, r * 0.25f, 245, 225, 130, 150);
+    } else if (u->role == ROLE_ARCHER) {
+        f32 qx = cx - cs * r * 0.45f - px * r * 0.25f;
+        f32 qy = cy - sn * r * 0.45f - py * r * 0.25f;
+        SDL_SetRenderDrawColor(renderer, 82, 58, 38, 220);
+        SDL_FRect quiver = {qx - r * 0.14f, qy - r * 0.35f, r * 0.28f, r * 0.7f};
+        SDL_RenderFillRect(renderer, &quiver);
+    } else if (u->role == ROLE_PLAYER) {
+        draw_ring(renderer, cx, cy - r * 0.75f, r * 0.20f, r * 0.30f, 255, 240, 180, 145);
+    }
+
+    // Body core
+    if (role_tex) {
+        f32 size = r * 2.2f;
+        SDL_FRect dst = {cx - size * 0.5f, cy - size * 0.5f, size, size};
+        f32 angle_deg = (facing + stride * 0.09f) * (180.0f / 3.14159265f);
+        SDL_SetTextureAlphaModFloat(role_tex, 0.98f);
+        SDL_RenderTextureRotated(renderer, role_tex, NULL, &dst, (double)angle_deg, NULL, SDL_FLIP_NONE);
+        SDL_SetTextureAlphaModFloat(role_tex, 1.0f);
+    } else {
+        fill_circle(renderer, cx, cy, r * 1.05f, u->color[0], u->color[1], u->color[2], 240);
+    }
+
+    // Chest belt / trim
+    draw_ring(renderer, cx, cy + r * 0.05f, r * 0.52f, r * 0.62f, 35, 35, 42, 120);
+
+    // Arms (paper-doll style front/back circles)
+    fill_circle(renderer, cx + px * r * (0.42f + stride * 0.08f), cy + py * r * (0.42f + stride * 0.08f),
+                r * 0.2f, 200, 170, 135, 235);
+    fill_circle(renderer, cx - px * r * (0.42f - stride * 0.08f), cy - py * r * (0.42f - stride * 0.08f),
+                r * 0.2f, 185, 155, 125, 215);
+
+    // Head
+    f32 head_x = cx + cs * r * 0.38f;
+    f32 head_y = cy + sn * r * 0.38f - r * 0.08f;
+    fill_circle(renderer, head_x, head_y, r * 0.28f, 215, 185, 145, 255);
+
+    // Role-specific front accents
+    if (u->role == ROLE_MELEE || u->role == ROLE_PLAYER) {
+        fill_circle(renderer, cx + px * r * 0.35f, cy + py * r * 0.35f, r * 0.12f, 170, 70, 70, 220);
+        fill_circle(renderer, cx - px * r * 0.35f, cy - py * r * 0.35f, r * 0.12f, 170, 70, 70, 220);
+        if (u->role == ROLE_PLAYER) {
+            draw_ring(renderer, cx, cy, r * 0.66f, r * 0.76f, 225, 225, 240, 120);
+        }
+    } else if (u->role == ROLE_ARCHER) {
+        fill_circle(renderer, head_x - cs * r * 0.04f, head_y - sn * r * 0.04f, r * 0.18f, 80, 120, 65, 210);
+    } else if (u->role == ROLE_HEALER) {
+        SDL_SetRenderDrawColor(renderer, 240, 235, 150, 220);
+        SDL_RenderLine(renderer, cx - px * r * 0.20f, cy - py * r * 0.20f,
+                       cx + px * r * 0.20f, cy + py * r * 0.20f);
+        SDL_RenderLine(renderer, cx - cs * r * 0.20f, cy - sn * r * 0.20f,
+                       cx + cs * r * 0.20f, cy + sn * r * 0.20f);
+    } else if (u->role == ROLE_MAGE) {
+        for (int i = 0; i < 3; i++) {
+            f32 a = t * 2.1f + phase + i * 2.1f;
+            fill_circle(renderer, cx + cosf(a) * r * 0.52f, cy + sinf(a) * r * 0.52f,
+                        r * 0.07f, 170, 140, 255, 170);
+        }
+    }
+
+    // Weapon on top
+    draw_weapon(renderer, u, cx, cy, r, facing);
+}
+
 void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
                    SDL_Texture *role_textures[ROLE_COUNT]) {
     // Orbs
@@ -456,14 +561,14 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
     for (u32 i = 0; i < gs->num_squad; i++) {
         Unit *u = &gs->squad[i];
         SDL_Texture *tex = (u->role < ROLE_COUNT) ? role_textures[u->role] : NULL;
-        draw_unit_composite(renderer, u, map_rect, tex);
+        draw_squad_layered(renderer, gs, u, map_rect, tex);
     }
 
     // Player (drawn last, on top)
     {
         Unit *p = &gs->player;
         SDL_Texture *tex = (p->role < ROLE_COUNT) ? role_textures[p->role] : NULL;
-        draw_unit_composite(renderer, p, map_rect, tex);
+        draw_squad_layered(renderer, gs, p, map_rect, tex);
     }
 
     // Health bars on top of everything
