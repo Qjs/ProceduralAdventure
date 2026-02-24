@@ -26,11 +26,15 @@ void g_game_init(Game *game, SDL_Renderer *renderer, const MapGraph *graph,
         g_terrain_free(&game->terrain);
     }
 
-    // Destroy old role textures before zeroing state
+    // Destroy old textures before zeroing state
     g_unit_gen_destroy(game->state.role_textures);
+    if (game->state.orb_texture) SDL_DestroyTexture(game->state.orb_texture);
+    if (game->state.portal_texture) SDL_DestroyTexture(game->state.portal_texture);
 
     game->state = (GameState){0};
     g_unit_gen_textures(renderer, game->state.role_textures);
+    game->state.orb_texture = g_gen_orb_texture(renderer);
+    game->state.portal_texture = g_gen_portal_texture(renderer);
     game->state.elevation_speed_factor = 0.5f;
     game->state.water_blocks_movement = true;
     game->state.squad_stance = STANCE_DEFENSIVE;
@@ -222,6 +226,38 @@ static void update_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *g
     }
 }
 
+static void apply_stance_auras(GameState *gs) {
+    // Reset bonus_armor each frame
+    gs->player.bonus_armor = 0.0f;
+    for (u32 i = 0; i < gs->num_squad; i++)
+        gs->squad[i].bonus_armor = 0.0f;
+
+    // Melee defensive: +3 bonus armor to self
+    if (gs->squad_stance == STANCE_DEFENSIVE) {
+        for (u32 i = 0; i < gs->num_squad; i++) {
+            if (!gs->squad[i].alive) continue;
+            if (gs->squad[i].role == ROLE_MELEE)
+                gs->squad[i].bonus_armor += 3.0f;
+        }
+    }
+
+    // Healer passive: +2 bonus armor to all allies within attack_range
+    if (gs->squad_stance == STANCE_PASSIVE) {
+        for (u32 i = 0; i < gs->num_squad; i++) {
+            Unit *healer = &gs->squad[i];
+            if (!healer->alive || healer->role != ROLE_HEALER) continue;
+            f32 range = healer->attack_range;
+            if (gs->player.alive && vec2_dist(healer->pos, gs->player.pos) < range)
+                gs->player.bonus_armor += 2.0f;
+            for (u32 j = 0; j < gs->num_squad; j++) {
+                if (j == i || !gs->squad[j].alive) continue;
+                if (vec2_dist(healer->pos, gs->squad[j].pos) < range)
+                    gs->squad[j].bonus_armor += 2.0f;
+            }
+        }
+    }
+}
+
 void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     GameState *gs = &game->state;
     TerrainGrid *tg = &game->terrain;
@@ -291,6 +327,9 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     // Update squad boid steering
     update_squad(gs, tg, graph, fdt);
 
+    // Apply stance auras (bonus armor etc.) before combat
+    apply_stance_auras(gs);
+
     // Enemy AI + combat
     g_enemy_update(gs, tg, graph, fdt);
     g_combat_update_squad_states(gs);
@@ -350,6 +389,8 @@ void g_game_render(Game *game, SDL_Renderer *renderer, SDL_FRect map_rect) {
 
 void g_game_shutdown(Game *game) {
     g_unit_gen_destroy(game->state.role_textures);
+    if (game->state.orb_texture) SDL_DestroyTexture(game->state.orb_texture);
+    if (game->state.portal_texture) SDL_DestroyTexture(game->state.portal_texture);
     if (game->state.terrain_ready) {
         g_terrain_free(&game->terrain);
         game->state.terrain_ready = false;

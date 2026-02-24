@@ -220,6 +220,128 @@ void g_unit_gen_textures(SDL_Renderer *renderer, SDL_Texture *out[ROLE_COUNT]) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Procedural swirly orb / portal texture generation
+// ---------------------------------------------------------------------------
+
+static SDL_Texture *generate_swirl_texture(SDL_Renderer *renderer,
+                                            const Color stops[4], const Color rim,
+                                            f32 freq, f32 seed_z, f32 swirl_strength,
+                                            s32 size) {
+    u8 *pixels = (u8 *)SDL_calloc(size * size * 4, 1);
+    if (!pixels) return NULL;
+
+    f32 cx = (f32)size * 0.5f;
+    f32 cy = (f32)size * 0.5f;
+    f32 rad = cx - 1.0f;
+
+    f32 light_x = -0.4f, light_y = -0.6f, light_z = 0.65f;
+    f32 light_len = sqrtf(light_x * light_x + light_y * light_y + light_z * light_z);
+    light_x /= light_len; light_y /= light_len; light_z /= light_len;
+
+    for (s32 py = 0; py < size; py++) {
+        for (s32 px = 0; px < size; px++) {
+            f32 dx = ((f32)px + 0.5f - cx) / rad;
+            f32 dy = ((f32)py + 0.5f - cy) / rad;
+            f32 dist2 = dx * dx + dy * dy;
+            u8 *pixel = &pixels[(py * size + px) * 4];
+
+            if (dist2 > 1.0f) {
+                pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0;
+                continue;
+            }
+
+            f32 dist = sqrtf(dist2);
+            f32 sz = sqrtf(1.0f - dist2);
+            f32 sx = dx, sy = dy;
+
+            // Spherical noise coordinates
+            f32 nx = sx * freq;
+            f32 ny = sy * freq;
+            f32 nz = sz * freq + seed_z;
+
+            // Base fBm noise
+            f32 noise = stb_perlin_fbm_noise3(nx, ny, nz, 2.0f, 0.5f, 4);
+
+            // Swirl: perturb coords by polar angle, scaled by distance from center
+            f32 angle = atan2f(dy, dx);
+            f32 swirl_amt = swirl_strength * dist;
+            f32 swirl = stb_perlin_fbm_noise3(
+                nx + sinf(angle * 4.0f + dist * 6.0f) * swirl_amt,
+                ny + cosf(angle * 4.0f + dist * 6.0f) * swirl_amt,
+                nz + sinf(angle * 2.0f) * 0.3f,
+                2.0f, 0.5f, 3);
+
+            // Blend base noise with swirl — heavy swirl bias for the swirly look
+            noise = noise * 0.3f + swirl * 0.7f;
+
+            // Map to palette
+            f32 t = noise + 0.5f;
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            Color col = palette_sample(stops, t);
+
+            // Lighting
+            f32 ndotl = sx * light_x + sy * light_y + sz * light_z;
+            if (ndotl < 0.0f) ndotl = 0.0f;
+            f32 lighting = 0.5f + 0.5f * ndotl;
+            f32 limb = 0.7f + 0.3f * sz;
+            lighting *= limb;
+
+            col.r = (u8)(col.r * lighting);
+            col.g = (u8)(col.g * lighting);
+            col.b = (u8)(col.b * lighting);
+
+            // Rim glow — colored edge highlight
+            f32 rim_strength = 1.0f - sz;
+            rim_strength = rim_strength * rim_strength * rim_strength * rim_strength;
+            rim_strength *= 0.7f;
+            col.r = (u8)(col.r * (1.0f - rim_strength) + rim.r * rim_strength);
+            col.g = (u8)(col.g * (1.0f - rim_strength) + rim.g * rim_strength);
+            col.b = (u8)(col.b * (1.0f - rim_strength) + rim.b * rim_strength);
+
+            // Soft edge
+            f32 alpha = 1.0f;
+            if (dist > 0.85f) {
+                alpha = (1.0f - dist) / 0.15f;
+                if (alpha < 0.0f) alpha = 0.0f;
+            }
+
+            pixel[0] = col.r;
+            pixel[1] = col.g;
+            pixel[2] = col.b;
+            pixel[3] = (u8)(alpha * 255.0f);
+        }
+    }
+
+    SDL_Texture *tex = NULL;
+    SDL_Surface *surface = SDL_CreateSurfaceFrom(
+        size, size, SDL_PIXELFORMAT_RGBA32, pixels, size * 4);
+    if (surface) {
+        tex = SDL_CreateTextureFromSurface(renderer, surface);
+        if (tex) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+        SDL_DestroySurface(surface);
+    }
+    SDL_free(pixels);
+    return tex;
+}
+
+SDL_Texture *g_gen_orb_texture(SDL_Renderer *renderer) {
+    // Light blue swirly orb
+    Color stops[4] = {{180, 230, 255}, {120, 200, 250}, {80, 170, 240}, {50, 140, 220}};
+    Color rim_col = {200, 240, 255};
+    return generate_swirl_texture(renderer, stops, rim_col,
+                                   4.0f, 7.5f, 0.8f, 48);
+}
+
+SDL_Texture *g_gen_portal_texture(SDL_Renderer *renderer) {
+    // Purple swirly portal
+    Color stops[4] = {{180, 120, 255}, {140, 80, 240}, {110, 60, 210}, {80, 40, 180}};
+    Color rim_col = {220, 160, 255};
+    return generate_swirl_texture(renderer, stops, rim_col,
+                                   5.0f, 9.0f, 1.0f, 48);
+}
+
 void g_unit_gen_destroy(SDL_Texture *textures[ROLE_COUNT]) {
     for (s32 i = 0; i < ROLE_COUNT; i++) {
         if (textures[i]) {

@@ -11,12 +11,13 @@ void g_combat_update(GameState *gs, const TerrainGrid *tg, const MapGraph *graph
 void g_combat_update_projectiles(GameState *gs, f32 dt);
 
 // Apply damage to a unit, set dead if HP <= 0
-void g_combat_deal_damage(Unit *target, f32 damage);
+// is_magic=true bypasses armor reduction
+void g_combat_deal_damage(Unit *target, f32 damage, bool is_magic);
 
 // Spawn a straight-line projectile
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
                                 f32 damage, Team source_team, const u8 color[4],
-                                bool applies_slow, bool is_arrow);
+                                bool applies_slow, bool is_arrow, bool is_magic);
 
 // Update squad state machine (FOLLOW/ATTACK/RETREAT/HEAL transitions)
 void g_combat_update_squad_states(GameState *gs);

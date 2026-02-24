@@ -105,6 +105,8 @@ typedef struct {
     u32       target_id;
     u8        color[4]; // RGBA
     BoidWeights weights;
+    f32       armor;              // flat damage reduction (1 dmg per point, min 0.5)
+    f32       bonus_armor;        // temporary per-frame armor from stance auras
     f32       slow_timer;         // while >0, speed halved (freeze)
     f32       speed_boost_timer;  // while >0, speed 1.5x (mage buff)
     f32       facing;             // radians, from atan2f(vel.y, vel.x)
@@ -120,6 +122,8 @@ typedef struct {
     u8    color[4];
     bool  applies_slow;  // mage defensive freeze projectile
     bool  is_arrow;      // archer projectile (faster, no trail)
+    bool  is_magic;      // mage projectile (bypasses armor)
+    bool  has_pierced;   // archer piercing: already passed through one target
 } Projectile;
 
 typedef struct {
@@ -176,6 +180,8 @@ typedef struct {
     u32         enemies_killed;
     ParticleSystem particles;
     SDL_Texture *role_textures[ROLE_COUNT];
+    SDL_Texture *orb_texture;
+    SDL_Texture *portal_texture;
 } GameState;
 
 #endif

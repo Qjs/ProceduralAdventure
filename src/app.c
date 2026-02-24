@@ -294,6 +294,32 @@ void app_render(App *app) {
         }
     }
 
+    // -- Stance Info section (collapsed by default) --
+    if (igCollapsingHeader_TreeNodeFlags("Stance Info", 0)) {
+        igTextColored((ImVec4_c){0.9f, 0.6f, 0.2f, 1.0f}, "Melee");
+        igBulletText("[1] Cleave: AoE splash 50%% to nearby");
+        igBulletText("[2] Armor Up: +3 bonus armor");
+        igBulletText("[3] Parry: 33%% reflect 50%% dmg");
+        igSpacing();
+
+        igTextColored((ImVec4_c){0.4f, 0.8f, 0.3f, 1.0f}, "Archer");
+        igBulletText("[1] Piercing: arrow continues through");
+        igBulletText("[2] Pushback: knock enemy back");
+        igBulletText("[3] Speed Boost (Water Walk)");
+        igSpacing();
+
+        igTextColored((ImVec4_c){0.3f, 0.9f, 0.7f, 1.0f}, "Healer");
+        igBulletText("[1] Direct Heal (single target)");
+        igBulletText("[2] AoE Heal: 40%% to all in range");
+        igBulletText("[3] Armor Aura: +2 to nearby allies");
+        igSpacing();
+
+        igTextColored((ImVec4_c){0.6f, 0.4f, 1.0f, 1.0f}, "Mage");
+        igBulletText("[1] Fire: 1.5x damage");
+        igBulletText("[2] Ice: slow enemies");
+        igBulletText("[3] Water Walk + Speed Boost");
+    }
+
     // -- Minimap section --
     if (app->show_minimap && app->map_texture) {
         if (igCollapsingHeader_TreeNodeFlags("World Map", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -362,7 +388,14 @@ void app_render(App *app) {
     // ---- Upgrade screen modal ----
     if (app->upgrading) {
         static const char *role_names[] = { "Melee", "Archer", "Healer", "Mage" };
-        static const char *stat_names[] = { "HP", "Damage", "Range", "Cooldown" };
+        // Per-role stat names: Melee gets Armor instead of Range,
+        // Healer shows Heal instead of Damage
+        static const char *stat_names[MAX_SQUAD][4] = {
+            { "HP", "Damage", "Armor",  "Cooldown" },  // Melee
+            { "HP", "Damage", "Range",  "Cooldown" },  // Archer
+            { "HP", "Heal",   "Range",  "Cooldown" },  // Healer
+            { "HP", "Damage", "Range",  "Cooldown" },  // Mage
+        };
 
         ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
         igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
@@ -385,7 +418,7 @@ void app_render(App *app) {
             for (u32 s = 0; s < 4; s++) {
                 igPushID_Int((int)s);
                 u32 lvl = app->progression.stat_levels[i][s];
-                igText("  %s Lv.%u", stat_names[s], lvl);
+                igText("  %s Lv.%u", stat_names[i][s], lvl);
                 igSameLine(0, 8);
                 bool can_buy = app->progression.xp >= 15;
                 if (!can_buy) igBeginDisabled(true);

@@ -7,4 +7,8 @@
 void g_unit_gen_textures(SDL_Renderer *renderer, SDL_Texture *out[ROLE_COUNT]);
 void g_unit_gen_destroy(SDL_Texture *textures[ROLE_COUNT]);
 
+// Procedural orb / portal textures (swirly spheres)
+SDL_Texture *g_gen_orb_texture(SDL_Renderer *renderer);
+SDL_Texture *g_gen_portal_texture(SDL_Renderer *renderer);
+
 #endif

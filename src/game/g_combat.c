@@ -3,8 +3,17 @@
 #include "g_terrain.h"
 #include "g_particles.h"
 
-void g_combat_deal_damage(Unit *target, f32 damage) {
+void g_combat_deal_damage(Unit *target, f32 damage, bool is_magic) {
     if (!target->alive) return;
+
+    // Armor: flat reduction of 1 damage per armor point, min 0.5 damage
+    // Does not apply to magic damage
+    f32 total_armor = target->armor + target->bonus_armor;
+    if (!is_magic && total_armor > 0.0f) {
+        damage -= total_armor;
+        if (damage < 0.5f) damage = 0.5f;
+    }
+
     target->hp -= damage;
     if (target->hp <= 0.0f) {
         target->hp = 0.0f;
@@ -15,7 +24,7 @@ void g_combat_deal_damage(Unit *target, f32 damage) {
 
 void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
                                 f32 damage, Team source_team, const u8 color[4],
-                                bool applies_slow, bool is_arrow) {
+                                bool applies_slow, bool is_arrow, bool is_magic) {
     if (gs->num_projectiles >= MAX_PROJECTILES) return;
 
     Projectile *p = &gs->projectiles[gs->num_projectiles++];
@@ -30,6 +39,8 @@ void g_combat_spawn_projectile(GameState *gs, Vec2 from, Vec2 to,
     p->color[3] = color[3];
     p->applies_slow = applies_slow;
     p->is_arrow = is_arrow;
+    p->is_magic = is_magic;
+    p->has_pierced = false;
 
     Vec2 dir = vec2_normalize(vec2_sub(to, from));
     f32 speed = is_arrow ? 0.30f : 0.2f;
@@ -70,10 +81,30 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         }
 
         if (best && best_frac < 1.0f) {
-            best->hp += u->damage; // healer "damage" is heal amount
-            if (best->hp > best->max_hp) best->hp = best->max_hp;
+            // Defensive stance: AoE heal at 40% to all allies in range
+            if (u->team == TEAM_PLAYER && gs->squad_stance == STANCE_DEFENSIVE) {
+                f32 aoe_heal = u->damage * 0.4f;
+                if (gs->player.alive && gs->player.hp < gs->player.max_hp &&
+                    vec2_dist(u->pos, gs->player.pos) < u->attack_range) {
+                    gs->player.hp += aoe_heal;
+                    if (gs->player.hp > gs->player.max_hp) gs->player.hp = gs->player.max_hp;
+                    g_particles_heal(&gs->particles, gs->player.pos);
+                }
+                for (u32 j = 0; j < gs->num_squad; j++) {
+                    Unit *ally = &gs->squad[j];
+                    if (!ally->alive || ally->hp >= ally->max_hp) continue;
+                    if (vec2_dist(u->pos, ally->pos) < u->attack_range) {
+                        ally->hp += aoe_heal;
+                        if (ally->hp > ally->max_hp) ally->hp = ally->max_hp;
+                        g_particles_heal(&gs->particles, ally->pos);
+                    }
+                }
+            } else {
+                best->hp += u->damage; // healer "damage" is heal amount
+                if (best->hp > best->max_hp) best->hp = best->max_hp;
+                g_particles_heal(&gs->particles, best->pos);
+            }
             u->cooldown_timer = u->cooldown;
-            g_particles_heal(&gs->particles, best->pos);
         }
         return;
     }
@@ -133,16 +164,55 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
             }
         }
 
-        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow, arrow);
+        bool magic = (u->role == ROLE_MAGE);
+        g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color, slow, arrow, magic);
     } else {
         // Melee hit
         static const u8 spark_color[4] = {220, 220, 230, 255};
         g_particles_slash(&gs->particles, target->pos, u->facing, spark_color);
-        g_combat_deal_damage(target, u->damage);
+        g_combat_deal_damage(target, u->damage, false);
         if (!target->alive) {
             g_particles_burst(&gs->particles, target->pos, 12, target->color);
             if (u->team == TEAM_PLAYER)
                 gs->enemies_killed++;
+        }
+
+        // Melee Cleave: aggressive stance splash damage to nearby enemies
+        if (u->role == ROLE_MELEE && u->team == TEAM_PLAYER &&
+            gs->squad_stance == STANCE_AGGRESSIVE) {
+            static const u8 cleave_color[4] = {255, 160, 60, 255};
+            f32 splash_dmg = u->damage * 0.5f;
+            for (u32 e = 0; e < gs->num_enemies; e++) {
+                Unit *other = &gs->enemies[e];
+                if (!other->alive || other == target) continue;
+                if (vec2_dist(other->pos, target_pos) < 0.02f) {
+                    g_combat_deal_damage(other, splash_dmg, false);
+                    g_particles_slash(&gs->particles, other->pos, u->facing, cleave_color);
+                    if (!other->alive) {
+                        g_particles_burst(&gs->particles, other->pos, 12, other->color);
+                        gs->enemies_killed++;
+                    }
+                }
+            }
+        }
+
+        // Melee Parry: when enemy hits a passive-stance player-team melee,
+        // 33% chance to reflect 50% damage back
+        if (u->team == TEAM_ENEMY && target->role == ROLE_MELEE &&
+            target->team == TEAM_PLAYER && gs->squad_stance == STANCE_PASSIVE &&
+            target->alive) {
+            // Simple pseudo-random: use target position as seed
+            u32 rcheck = (u32)(target->pos.x * 10000.0f + target->pos.y * 7777.0f +
+                               u->cooldown_timer * 3333.0f);
+            if (rcheck % 3 == 0) {
+                static const u8 parry_color[4] = {180, 220, 255, 255};
+                f32 reflect_dmg = u->damage * 0.5f;
+                g_combat_deal_damage(u, reflect_dmg, false);
+                g_particles_burst(&gs->particles, u->pos, 8, parry_color);
+                if (!u->alive) {
+                    g_particles_burst(&gs->particles, u->pos, 12, u->color);
+                }
+            }
         }
     }
 }
@@ -195,13 +265,33 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 Unit *enemy = &gs->enemies[e];
                 if (!enemy->alive) continue;
                 if (vec2_dist(p->pos, enemy->pos) < hit_radius + enemy->radius) {
-                    g_combat_deal_damage(enemy, p->damage);
+                    g_combat_deal_damage(enemy, p->damage, p->is_magic);
                     if (!enemy->alive) {
                         gs->enemies_killed++;
                         g_particles_burst(&gs->particles, enemy->pos, 12, enemy->color);
                     }
                     if (p->applies_slow) enemy->slow_timer = 2.0f;
-                    hit = true;
+
+                    // Archer Pushback: defensive stance knocks enemy back
+                    if (p->is_arrow && gs->squad_stance == STANCE_DEFENSIVE && enemy->alive) {
+                        Vec2 push_dir = vec2_normalize(p->vel);
+                        enemy->pos = vec2_add(enemy->pos, vec2_scale(push_dir, 0.015f));
+                        // Clamp to bounds
+                        if (enemy->pos.x < 0.0f) enemy->pos.x = 0.0f;
+                        if (enemy->pos.x > 1.0f) enemy->pos.x = 1.0f;
+                        if (enemy->pos.y < 0.0f) enemy->pos.y = 0.0f;
+                        if (enemy->pos.y > 1.0f) enemy->pos.y = 1.0f;
+                    }
+
+                    // Archer Piercing: aggressive stance, arrow continues through first target
+                    if (p->is_arrow && gs->squad_stance == STANCE_AGGRESSIVE && !p->has_pierced) {
+                        p->has_pierced = true;
+                        p->damage *= 0.5f;
+                        // Don't destroy projectile — skip setting hit=true
+                        g_particles_burst(&gs->particles, p->pos, 6, p->color);
+                    } else {
+                        hit = true;
+                    }
                     break;
                 }
             }
@@ -209,7 +299,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
             // Check player
             if (gs->player.alive &&
                 vec2_dist(p->pos, gs->player.pos) < hit_radius + gs->player.radius) {
-                g_combat_deal_damage(&gs->player, p->damage);
+                g_combat_deal_damage(&gs->player, p->damage, p->is_magic);
                 if (p->applies_slow) gs->player.slow_timer = 2.0f;
                 hit = true;
             }
@@ -219,7 +309,7 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                     Unit *ally = &gs->squad[s];
                     if (!ally->alive) continue;
                     if (vec2_dist(p->pos, ally->pos) < hit_radius + ally->radius) {
-                        g_combat_deal_damage(ally, p->damage);
+                        g_combat_deal_damage(ally, p->damage, p->is_magic);
                         if (p->applies_slow) ally->slow_timer = 2.0f;
                         hit = true;
                         break;

@@ -13,6 +13,7 @@ void g_unit_init_player(Unit *unit, const TerrainGrid *tg, const MapGraph *graph
     unit->attack_range = 0.02f;
     unit->cooldown = 0.5f;
     unit->cooldown_timer = 0.0f;
+    unit->armor = 3.0f;
     unit->radius = 0.006f;
     unit->color[0] = 255;
     unit->color[1] = 255;
@@ -46,13 +47,14 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
         u8 r, g, b;
         f32 speed;
         f32 hp;
+        f32 armor;
     } SquadDef;
 
     static const SquadDef defs[MAX_SQUAD] = {
-        { ROLE_MELEE,  220, 60,  60,  0.075f, 120.0f },
-        { ROLE_ARCHER,  60, 180, 60,  0.08f,   80.0f },
-        { ROLE_HEALER, 240, 220, 60,  0.07f,   90.0f },
-        { ROLE_MAGE,    80, 120, 240, 0.065f,  70.0f },
+        { ROLE_MELEE,  220, 60,  60,  0.075f, 120.0f, 4.0f },
+        { ROLE_ARCHER,  60, 180, 60,  0.08f,   80.0f, 1.0f },
+        { ROLE_HEALER, 240, 220, 60,  0.07f,   90.0f, 1.0f },
+        { ROLE_MAGE,    80, 120, 240, 0.065f,  70.0f, 0.0f },
     };
 
     static const Vec2 offsets[MAX_SQUAD] = {
@@ -81,6 +83,7 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
                         : 0.015f;
         u->cooldown = 0.8f;
         u->cooldown_timer = 0.0f;
+        u->armor = defs[i].armor;
         u->radius = 0.005f;
         u->color[0] = defs[i].r;
         u->color[1] = defs[i].g;
@@ -99,12 +102,18 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
             .separation_radius = 0.02f,
         };
 
-        // Apply upgrade multipliers
+        // Apply upgrade multipliers (role-specific stat slots)
+        // Slot 0: HP, Slot 1: Damage/Heal, Slot 3: Cooldown (all roles)
+        // Slot 2: Melee=Armor, others=Range
         if (stat_levels) {
-            u->max_hp   *= (1.0f + 0.10f * stat_levels[i][0]);
-            u->hp        = u->max_hp;
-            u->damage   *= (1.0f + 0.10f * stat_levels[i][1]);
-            u->attack_range *= (1.0f + 0.08f * stat_levels[i][2]);
+            u->max_hp *= (1.0f + 0.10f * stat_levels[i][0]);
+            u->hp      = u->max_hp;
+            u->damage *= (1.0f + 0.10f * stat_levels[i][1]);
+            if (defs[i].role == ROLE_MELEE) {
+                u->armor += 1.0f * stat_levels[i][2]; // +1 armor per level
+            } else {
+                u->attack_range *= (1.0f + 0.08f * stat_levels[i][2]);
+            }
             u->cooldown *= (1.0f - 0.05f * stat_levels[i][3]);
         }
 
@@ -130,6 +139,7 @@ void g_unit_init_enemy(Unit *unit, UnitRole role, u32 level, u32 total_upgrades)
         unit->damage = 10.0f;
         unit->attack_range = 0.015f;
         unit->cooldown = 1.0f;
+        unit->armor = 2.0f;
         unit->color[0] = 180; unit->color[1] = 40; unit->color[2] = 40; unit->color[3] = 255;
     } else {
         // ROLE_ENEMY_RANGED

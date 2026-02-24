@@ -76,12 +76,12 @@ target_link_libraries(ProceduralAdventure PRIVATE
 )
 
 if(EMSCRIPTEN)
-    set_target_properties(SDL3Starter PROPERTIES SUFFIX ".html")
+    set_target_properties(ProceduralAdventure PROPERTIES SUFFIX ".html")
 
-    target_compile_options(SDL3Starter PRIVATE -fno-exceptions -fno-rtti)
+    target_compile_options(ProceduralAdventure PRIVATE -fno-exceptions -fno-rtti)
     target_compile_options(cimgui PRIVATE -fno-exceptions -fno-rtti)
 
-    target_link_options(SDL3Starter PRIVATE
+    target_link_options(ProceduralAdventure PRIVATE
         -sINITIAL_MEMORY=32MB
         -sALLOW_MEMORY_GROWTH=1
         -sMAXIMUM_MEMORY=256mb
@@ -95,7 +95,7 @@ if(EMSCRIPTEN)
     )
 
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_compile_options(SDL3Starter PRIVATE -O3 -flto)
-        target_link_options(SDL3Starter PRIVATE -O3 -flto)
+        target_compile_options(ProceduralAdventure PRIVATE -O3 -flto)
+        target_link_options(ProceduralAdventure PRIVATE -O3 -flto)
     endif()
 endif()

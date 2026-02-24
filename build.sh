@@ -24,7 +24,7 @@ case "$TARGET" in
         emcmake cmake -B build-web -DCMAKE_BUILD_TYPE=Release
         cmake --build ./build-web/
         echo ""
-        echo "Web build complete: build-web/SDL3Starter.html"
+        echo "Web build complete: build-web/ProceduralAdventure.html"
         echo "Serve with:  python3 serve.py"
         ;;
     *)

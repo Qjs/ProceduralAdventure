@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProceduralAdventure</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a12;
+      color: #c8d0e0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: #e0e8f8;
+      margin-bottom: 0.5rem;
+    }
+
+    #canvas-container {
+      position: relative;
+      border: 2px solid #1e2a40;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(40, 80, 160, 0.15);
+    }
+
+    canvas.emscripten {
+      display: block;
+      width: 1280px;
+      height: 720px;
+      background: #0a0a12;
+    }
+
+    #status-bar {
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      color: #606878;
+      height: 1.2rem;
+    }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: #0a0a12;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: opacity 0.4s ease;
+    }
+
+    #loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #loading-text {
+      font-size: 0.9rem;
+      color: #8090b0;
+      margin-bottom: 1rem;
+    }
+
+    #progress-bar-outer {
+      width: 240px;
+      height: 4px;
+      background: #1a1a2e;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #progress-bar-inner {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4060c0, #60a0f0);
+      border-radius: 2px;
+      transition: width 0.2s ease;
+    }
+  </style>
+</head>
+<body>
+  <h1>GravityBoost</h1>
+
+  <div id="canvas-container">
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="1280" height="720"></canvas>
+    <div id="loading-overlay">
+      <div id="loading-text">Loading...</div>
+      <div id="progress-bar-outer">
+        <div id="progress-bar-inner"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status-bar"></div>
+
+  <script>
+    var statusEl = document.getElementById('status-bar');
+    var progressInner = document.getElementById('progress-bar-inner');
+    var loadingOverlay = document.getElementById('loading-overlay');
+
+    var Module = {
+      canvas: (function() { return document.getElementById('canvas'); })(),
+      setStatus: function(text) {
+        statusEl.textContent = text;
+        // Parse progress from text like "Downloading data... (X/Y)"
+        var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+        if (m) {
+          var pct = (parseFloat(m[2]) / parseFloat(m[4])) * 100;
+          progressInner.style.width = pct + '%';
+        }
+        if (text === '') {
+          // Done loading
+          loadingOverlay.classList.add('hidden');
+        }
+      },
+      totalDependencies: 0,
+      monitorRunDependencies: function(left) {
+        this.totalDependencies = Math.max(this.totalDependencies, left);
+        if (left === 0) {
+          Module.setStatus('');
+        } else {
+          Module.setStatus('Loading... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')');
+        }
+      },
+      onRuntimeInitialized: function() {
+        // Fallback: hide overlay once WASM runtime is ready
+        // (covers cases where monitorRunDependencies never fires with 0)
+        Module.setStatus('');
+      }
+    };
+
+    Module.setStatus('Loading...');
+
+    // Fallback: force-hide overlay after 3 seconds regardless
+    setTimeout(function() {
+      loadingOverlay.classList.add('hidden');
+    }, 3000);
+
+    window.onerror = function(msg) {
+      console.error('window.onerror:', msg);
+      Module.setStatus('Error — see browser console');
+      loadingOverlay.querySelector('#loading-text').textContent = 'Error loading — see console';
+    };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

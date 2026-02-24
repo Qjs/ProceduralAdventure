@@ -228,7 +228,8 @@ static void draw_ring(SDL_Renderer *renderer, f32 cx, f32 cy,
                        indices, CIRCLE_SEGMENTS * 6);
 }
 
-static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr) {
+static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr,
+                     SDL_Texture *orb_tex) {
     if (!orb->active) return;
     f32 pulse = (sinf(orb->pulse_timer * 3.0f) + 1.0f) * 0.5f; // 0..1
 
@@ -242,9 +243,19 @@ static void draw_orb(SDL_Renderer *renderer, const Orb *orb, SDL_FRect mr) {
     u8 ring_alpha = (u8)(50 + pulse * 50);
     draw_ring(renderer, cx, cy, ring_inner, ring_outer, 140, 210, 255, ring_alpha);
 
-    // Core filled circle
-    u8 core_alpha = (u8)(180 + pulse * 75);
-    fill_circle(renderer, cx, cy, core_r, 140, 210, 255, core_alpha);
+    // Core — textured swirly orb (rotates slowly)
+    if (orb_tex) {
+        f32 size = core_r * 2.0f;
+        SDL_FRect dst = {cx - core_r, cy - core_r, size, size};
+        f32 angle_deg = orb->pulse_timer * 20.0f; // slow rotation
+        SDL_SetTextureAlphaModFloat(orb_tex, (180 + pulse * 75) / 255.0f);
+        SDL_RenderTextureRotated(renderer, orb_tex, NULL, &dst,
+                                 (double)angle_deg, NULL, SDL_FLIP_NONE);
+        SDL_SetTextureAlphaModFloat(orb_tex, 1.0f);
+    } else {
+        u8 core_alpha = (u8)(180 + pulse * 75);
+        fill_circle(renderer, cx, cy, core_r, 140, 210, 255, core_alpha);
+    }
 }
 
 // Draw a filled ellipse as a triangle fan
@@ -308,7 +319,8 @@ static void draw_ellipse_ring(SDL_Renderer *renderer, f32 cx, f32 cy,
                        indices, CIRCLE_SEGMENTS * 6);
 }
 
-static void draw_portal(SDL_Renderer *renderer, const Portal *portal, SDL_FRect mr) {
+static void draw_portal(SDL_Renderer *renderer, const Portal *portal, SDL_FRect mr,
+                        SDL_Texture *portal_tex) {
     if (!portal->active) return;
     f32 pulse = (sinf(portal->pulse_timer * 2.0f) + 1.0f) * 0.5f;
 
@@ -329,9 +341,20 @@ static void draw_portal(SDL_Renderer *renderer, const Portal *portal, SDL_FRect 
                       ring_outer_rx, ring_outer_ry,
                       120, 80, 240, ring_alpha);
 
-    // Core filled ellipse
-    u8 core_alpha = (u8)(200 + pulse * 55);
-    fill_ellipse(renderer, cx, cy, core_rx, core_ry, 120, 80, 240, core_alpha);
+    // Core — textured swirly portal (rotates)
+    if (portal_tex) {
+        f32 size_x = core_rx * 2.0f;
+        f32 size_y = core_ry * 2.0f;
+        SDL_FRect dst = {cx - core_rx, cy - core_ry, size_x, size_y};
+        f32 angle_deg = portal->pulse_timer * -15.0f; // slow counter-rotation
+        SDL_SetTextureAlphaModFloat(portal_tex, (200 + pulse * 55) / 255.0f);
+        SDL_RenderTextureRotated(renderer, portal_tex, NULL, &dst,
+                                 (double)angle_deg, NULL, SDL_FLIP_NONE);
+        SDL_SetTextureAlphaModFloat(portal_tex, 1.0f);
+    } else {
+        u8 core_alpha = (u8)(200 + pulse * 55);
+        fill_ellipse(renderer, cx, cy, core_rx, core_ry, 120, 80, 240, core_alpha);
+    }
 }
 
 static void draw_camp_marker(SDL_Renderer *renderer, const EnemyCamp *camp, SDL_FRect mr) {
@@ -360,11 +383,11 @@ void g_render_game(GameState *gs, SDL_Renderer *renderer, SDL_FRect map_rect,
                    SDL_Texture *role_textures[ROLE_COUNT]) {
     // Orbs
     for (u32 i = 0; i < gs->num_orbs; i++) {
-        draw_orb(renderer, &gs->orbs[i], map_rect);
+        draw_orb(renderer, &gs->orbs[i], map_rect, gs->orb_texture);
     }
 
     // Portal
-    draw_portal(renderer, &gs->portal, map_rect);
+    draw_portal(renderer, &gs->portal, map_rect, gs->portal_texture);
 
     // Camp markers (faint circles)
     for (u32 i = 0; i < gs->num_camps; i++) {
