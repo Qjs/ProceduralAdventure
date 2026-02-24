@@ -140,8 +140,15 @@ void app_render(App *app) {
     int win_w, win_h;
     SDL_GetWindowSize(app->window, &win_w, &win_h);
 
-    // Right panel width
-    float panel_w = 280.0f;
+    // Right panel width (responsive; keep game viewport usable on smaller canvases)
+    float panel_w = 360.0f;
+    float min_game_w = 220.0f;
+    if (win_w < 1200) panel_w = (float)win_w * 0.33f;
+    if (panel_w < 220.0f) panel_w = 220.0f;
+    if (panel_w > 420.0f) panel_w = 420.0f;
+    if (panel_w > (float)win_w - min_game_w)
+        panel_w = (float)win_w - min_game_w;
+    if (panel_w < 180.0f) panel_w = 180.0f;
     float game_w = (float)win_w - panel_w;
     float game_h = (float)win_h;
 

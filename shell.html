@@ -171,9 +171,9 @@
     function syncCanvasSize() {
       resizeRaf = 0;
       const rect = container.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const targetW = Math.max(320, Math.round(rect.width * dpr));
-      const targetH = Math.max(180, Math.round(rect.height * dpr));
+      // Keep canvas backing size in CSS pixels to preserve mouse/input alignment.
+      const targetW = Math.max(320, Math.round(rect.width));
+      const targetH = Math.max(180, Math.round(rect.height));
       if (runtimeReady && typeof Module.setCanvasSize === 'function') {
         Module.setCanvasSize(targetW, targetH);
       } else if (canvas.width !== targetW || canvas.height !== targetH) {
