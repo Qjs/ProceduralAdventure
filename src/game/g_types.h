@@ -222,6 +222,7 @@ typedef struct {
     bool        level_complete;
     SquadStance squad_stance;
     u32         enemies_killed;
+    f32         river_damage_timer;
     ParticleSystem particles;
     GPhysicsState *physics;
     SDL_Texture *role_textures[ROLE_COUNT];

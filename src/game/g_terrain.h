@@ -20,4 +20,7 @@ u32  g_terrain_find_cell(const TerrainGrid *tg, const MapGraph *graph, Vec2 pos)
 f32  g_terrain_get_elevation(const TerrainGrid *tg, const MapGraph *graph, Vec2 pos);
 bool g_terrain_is_water(const TerrainGrid *tg, const MapGraph *graph, Vec2 pos);
 
+// River query: returns flow value at position (0 = no river), O(1) pixel lookup
+u8   g_terrain_get_river(const Map *map, Vec2 pos);
+
 #endif

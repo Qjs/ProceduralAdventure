@@ -25,12 +25,14 @@ typedef struct {
     u32  *adjacent;    u32 num_adjacent;   // neighboring corners
     u32  *touches;     u32 num_touches;    // adjacent centers
     u32  *protrudes;   u32 num_protrudes;  // adjacent edges
+    u32   downslope;   // index of lowest adjacent corner (river flow direction)
 } Corner;
 
 typedef struct {
     u32 d0, d1;        // two Delaunay sites (Centers)
     u32 v0, v1;        // two Voronoi vertices (Corners), v1 may be UINT32_MAX for border
     bool border;
+    u32 river;         // flow volume (0 = no river, >=1 = river)
 } MapEdge;
 
 typedef struct {
@@ -53,12 +55,16 @@ typedef struct {
     f32  elevation_gamma;
     f32  snow_threshold;
     bool boss_theme;
+    u32  num_rivers;
+    f32  river_min_elev;
 } MapParams;
 
 typedef struct {
     MapParams  params;
     MapGraph   graph;
-    u32       *pixels;    // RGBA pixel buffer (raster_w * raster_h)
+    u32       *pixels;      // RGBA pixel buffer (raster_w * raster_h)
+    bool       lava_rivers;
+    u8        *river_mask;  // raster_w * raster_h, flow value per pixel (0 = no river)
 } Map;
 
 #endif

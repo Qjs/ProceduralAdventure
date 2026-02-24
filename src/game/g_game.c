@@ -593,7 +593,50 @@ static void apply_stance_auras(GameState *gs) {
     }
 }
 
-void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
+static void update_river_damage(GameState *gs, const Map *map, const TerrainGrid *tg,
+                                const MapGraph *graph, f32 dt) {
+    if (!map->lava_rivers) return;
+
+    gs->river_damage_timer -= dt;
+    if (gs->river_damage_timer > 0.0f) return;
+    gs->river_damage_timer = 0.5f;
+
+    static const u8 lava_color[4] = {255, 130, 40, 255};
+    (void)tg;
+    (void)graph;
+
+    // Player
+    if (gs->player.alive && g_terrain_get_river(map, gs->player.pos)) {
+        g_combat_deal_damage(&gs->player, 5.0f, true);
+        gs->player.slow_timer = 0.3f;
+        g_particles_burst(&gs->particles, gs->player.pos, 4, lava_color);
+    }
+
+    // Squad
+    for (u32 i = 0; i < gs->num_squad; i++) {
+        Unit *u = &gs->squad[i];
+        if (!u->alive) continue;
+        if (g_terrain_get_river(map, u->pos)) {
+            g_combat_deal_damage(u, 5.0f, true);
+            u->slow_timer = 0.3f;
+            g_particles_burst(&gs->particles, u->pos, 4, lava_color);
+        }
+    }
+
+    // Enemies
+    for (u32 i = 0; i < gs->num_enemies; i++) {
+        Unit *e = &gs->enemies[i];
+        if (!e->alive) continue;
+        if (g_terrain_get_river(map, e->pos)) {
+            g_combat_deal_damage(e, 5.0f, true);
+            e->slow_timer = 0.3f;
+            g_particles_burst(&gs->particles, e->pos, 4, lava_color);
+        }
+    }
+}
+
+void g_game_update(Game *game, const Map *map, f64 dt) {
+    const MapGraph *graph = &map->graph;
     GameState *gs = &game->state;
     TerrainGrid *tg = &game->terrain;
     f32 fdt = (f32)dt;
@@ -689,6 +732,7 @@ void g_game_update(Game *game, const MapGraph *graph, f64 dt) {
     g_combat_update(gs, tg, graph, fdt);
     g_combat_update_projectiles(gs, fdt);
     update_environment_effect(gs, tg, graph, fdt);
+    update_river_damage(gs, map, tg, graph, fdt);
     g_particles_update(&gs->particles, fdt);
 
     // Orb collection

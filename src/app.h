@@ -36,7 +36,8 @@ typedef struct {
 } App;
 
 // Lifecycle
-bool app_init(App *app, const char *title, int w, int h);
+// seed < 0 means randomize
+bool app_init(App *app, const char *title, int w, int h, s32 seed);
 void app_shutdown(App *app);
 
 // Per-frame

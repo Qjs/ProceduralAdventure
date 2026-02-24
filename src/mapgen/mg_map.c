@@ -4,6 +4,7 @@
 #include "mg_island.h"
 #include "mg_elevation.h"
 #include "mg_raster.h"
+#include "mg_rivers.h"
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
 #include <stdlib.h>
@@ -25,6 +26,8 @@ void mg_map_init(Map *map) {
         .elevation_gamma = 0.8f,
         .snow_threshold  = 0.75f,
         .boss_theme = false,
+        .num_rivers     = 15,
+        .river_min_elev = 0.55f,
     };
 }
 
@@ -53,14 +56,22 @@ void mg_map_generate(Map *map) {
     // 4. Elevation
     mg_assign_elevation(&map->graph, &map->params);
 
-    // 5. Rasterize
+    // 5. Rivers (along Voronoi edges, downhill)
+    mg_assign_rivers(&map->graph, &map->params, map->params.seed);
+
+    // 6. Rasterize
     mg_rasterize(map);
+
+    // 7. Draw rivers on top of rasterized terrain
+    mg_rasterize_rivers(map);
 }
 
 void mg_map_free(Map *map) {
     mg_free_mesh(&map->graph);
     free(map->pixels);
     map->pixels = NULL;
+    free(map->river_mask);
+    map->river_mask = NULL;
 }
 
 bool mg_map_imgui_controls(Map *map) {
@@ -86,6 +97,12 @@ bool mg_map_imgui_controls(Map *map) {
     igSliderFloat("Radial Power", &p->radial_power, 0.5f, 5.0f, "%.1f", 0);
 
     igSliderFloat("Land Threshold", &p->land_threshold, -0.5f, 0.5f, "%.2f", 0);
+
+    igSeparatorText("Rivers");
+    int rivers_i = (int)p->num_rivers;
+    if (igSliderInt("Num Rivers", &rivers_i, 0, 50, "%d", 0))
+        p->num_rivers = (u32)rivers_i;
+    igSliderFloat("River Min Elev", &p->river_min_elev, 0.2f, 0.9f, "%.2f", 0);
 
     igSeparatorText("Elevation");
     igSliderFloat("Elev Gamma", &p->elevation_gamma, 0.2f, 3.0f, "%.2f", 0);

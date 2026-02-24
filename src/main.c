@@ -1,4 +1,6 @@
 #include "app.h"
+#include <string.h>
+#include <stdlib.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -16,16 +18,25 @@ static void main_loop(void) {
 }
 #endif
 
+static s32 parse_seed(int argc, char *argv[]) {
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "--seed") == 0) {
+            return (s32)atoi(argv[i + 1]);
+        }
+    }
+    return -1; // randomize
+}
+
 int main(int argc, char *argv[]) {
-    (void)argc; (void)argv;
+    s32 seed = parse_seed(argc, argv);
 
 #ifdef __EMSCRIPTEN__
-    if (!app_init(&app, "ProceduralAdventure", 1280, 720))
+    if (!app_init(&app, "ProceduralAdventure", 1280, 720, seed))
         return 1;
     emscripten_set_main_loop(main_loop, 0, 1);
 #else
     App app;
-    if (!app_init(&app, "ProceduralAdventure", 1280, 720))
+    if (!app_init(&app, "ProceduralAdventure", 1280, 720, seed))
         return 1;
 
     while (app.running) {

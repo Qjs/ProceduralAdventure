@@ -2,6 +2,7 @@
 #include "mapgen/mg_raster.h"
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
@@ -61,7 +62,7 @@ static void apply_custom_imgui_style(void) {
     c[ImGuiCol_SeparatorActive]  = (ImVec4){0.72f, 0.46f, 0.28f, 0.95f};
 }
 
-bool app_init(App *app, const char *title, int w, int h) {
+bool app_init(App *app, const char *title, int w, int h, s32 seed) {
     memset(app, 0, sizeof(*app));
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -94,7 +95,13 @@ bool app_init(App *app, const char *title, int w, int h) {
 
     // Initialize and generate map
     mg_map_init(&app->map);
+    if (seed >= 0) {
+        app->map.params.seed = (u32)seed;
+    } else {
+        app->map.params.seed = (u32)time(NULL) % 1001;
+    }
     app->map.params.boss_theme = is_boss_level_index(app->level);
+    app->map.lava_rivers = is_boss_level_index(app->level);
     mg_map_generate(&app->map);
     app->map_texture = NULL;
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
@@ -146,7 +153,7 @@ void app_update(App *app) {
     // Pause game while on intro / upgrade modal
     if (app->upgrading || app->show_intro) return;
 
-    g_game_update(&app->game, &app->map.graph, app->dt);
+    g_game_update(&app->game, &app->map, app->dt);
 
     // Level transition — tally XP, regenerate map, show upgrade screen
     if (app->game.state.level_complete) {
@@ -158,6 +165,7 @@ void app_update(App *app) {
         app->level++;
         app->map.params.seed++;
         app->map.params.boss_theme = is_boss_level_index(app->level);
+        app->map.lava_rivers = is_boss_level_index(app->level);
         mg_map_generate(&app->map);
         if (app->map_texture) {
             SDL_DestroyTexture(app->map_texture);
@@ -567,6 +575,7 @@ void app_render(App *app) {
     // Handle regeneration
     if (regenerate) {
         app->map.params.boss_theme = is_boss_level_index(app->level);
+        app->map.lava_rivers = is_boss_level_index(app->level);
         mg_map_generate(&app->map);
         if (app->map_texture) {
             SDL_DestroyTexture(app->map_texture);

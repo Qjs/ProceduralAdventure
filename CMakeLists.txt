@@ -60,6 +60,7 @@ add_executable(ProceduralAdventure
     src/mapgen/mg_elevation.c
     src/mapgen/mg_raster.c
     src/mapgen/mg_map.c
+    src/mapgen/mg_rivers.c
     src/game/g_game.c
     src/game/g_terrain.c
     src/game/g_unit.c

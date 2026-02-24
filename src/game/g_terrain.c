@@ -86,3 +86,12 @@ bool g_terrain_is_water(const TerrainGrid *tg, const MapGraph *graph, Vec2 pos) 
     u32 idx = g_terrain_find_cell(tg, graph, pos);
     return graph->centers[idx].water;
 }
+
+u8 g_terrain_get_river(const Map *map, Vec2 pos) {
+    if (!map->river_mask) return 0;
+    s32 px = (s32)(pos.x * (f32)map->params.raster_w);
+    s32 py = (s32)(pos.y * (f32)map->params.raster_h);
+    if (px < 0 || py < 0 || px >= (s32)map->params.raster_w || py >= (s32)map->params.raster_h)
+        return 0;
+    return map->river_mask[(u32)py * map->params.raster_w + (u32)px];
+}
