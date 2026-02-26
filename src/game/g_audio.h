@@ -19,5 +19,8 @@ bool g_audio_init(void);
 void g_audio_shutdown(void);
 void g_audio_play(SoundID id);
 void g_audio_set_volume(float vol);
+float g_audio_get_volume(void);
+void g_audio_set_muted(bool muted);
+bool g_audio_get_muted(void);
 
 #endif

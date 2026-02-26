@@ -662,6 +662,19 @@ void app_render(App *app) {
         igBegin("Camp Rest", NULL, pause_flags);
         igText("Your party rests by the fire...");
         igSpacing();
+
+        igSeparatorText("Sound");
+        bool muted = g_audio_get_muted();
+        if (igCheckbox("Mute", &muted)) {
+            g_audio_set_muted(muted);
+        }
+        float vol = g_audio_get_volume() * 100.0f;
+        if (igSliderFloat("Volume", &vol, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_None)) {
+            g_audio_set_volume(vol / 100.0f);
+        }
+        igSpacing();
+
+        igSeparator();
         if (igButton("Break Camp", (ImVec2_c){-1, 36})) {
             app->paused = false;
         }

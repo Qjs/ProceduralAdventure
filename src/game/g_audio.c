@@ -26,6 +26,7 @@ static SoundBuffer  s_buffers[SFX_COUNT];
 static Voice        s_voices[MAX_VOICES];
 static SDL_AudioStream *s_stream;
 static float        s_volume = 0.5f;
+static bool         s_muted;
 static bool         s_initialized;
 
 /* ---- Synthesis primitives ---- */
@@ -215,6 +216,8 @@ static void generate_sfx_level_complete(SoundBuffer *buf) {
 static void audio_generate_samples(Sint16 *output, int num_samples) {
     memset(output, 0, (size_t)num_samples * sizeof(Sint16));
 
+    float effective_vol = s_muted ? 0.0f : s_volume;
+
     for (int v = 0; v < MAX_VOICES; v++) {
         Voice *voice = &s_voices[v];
         if (!voice->active) continue;
@@ -227,7 +230,7 @@ static void audio_generate_samples(Sint16 *output, int num_samples) {
             }
             float sample = (float)sb->samples[voice->pos] / 32767.0f;
             float existing = (float)output[i] / 32767.0f;
-            float mixed = existing + sample * s_volume;
+            float mixed = existing + sample * effective_vol;
             if (mixed >  1.0f) mixed =  1.0f;
             if (mixed < -1.0f) mixed = -1.0f;
             output[i] = (Sint16)(mixed * 32767.0f);
@@ -342,4 +345,16 @@ void g_audio_set_volume(float vol) {
     if (vol < 0.0f) vol = 0.0f;
     if (vol > 1.0f) vol = 1.0f;
     s_volume = vol;
+}
+
+float g_audio_get_volume(void) {
+    return s_volume;
+}
+
+void g_audio_set_muted(bool muted) {
+    s_muted = muted;
+}
+
+bool g_audio_get_muted(void) {
+    return s_muted;
 }
