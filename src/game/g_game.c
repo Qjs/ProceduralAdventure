@@ -6,6 +6,7 @@
 #include "g_combat.h"
 #include "g_particles.h"
 #include "g_physics.h"
+#include "g_audio.h"
 #include <stdlib.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
@@ -27,6 +28,12 @@ static u32 game_rand(GameState *gs) {
 
 static f32 game_rand01(GameState *gs) {
     return (f32)(game_rand(gs) % 10000) / 10000.0f;
+}
+
+static void camera_shake(Camera *cam, f32 duration, f32 intensity) {
+    if (cam->shake_timer > 0.0f && intensity <= cam->shake_intensity) return;
+    cam->shake_timer = duration;
+    cam->shake_intensity = intensity;
 }
 
 static void get_camera_view_bounds(const GameState *gs,
@@ -205,6 +212,7 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 g_particles_burst(&gs->particles, impact, 10, rock_color);
                 g_combat_deal_damage(ally, 16.0f, false);
                 ally->slow_timer = 0.8f;
+                camera_shake(&gs->camera, 0.25f, 0.006f);
 
                 Vec2 away = vec2_normalize(vec2_sub(impact, gs->env_boulder_from));
                 if (use_physics) {
@@ -231,6 +239,7 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 }
                 gs->player.slow_timer = 0.7f;
                 g_combat_deal_damage(&gs->player, 4.0f, true);
+                camera_shake(&gs->camera, 0.15f, 0.004f);
             }
             for (u32 i = 0; i < gs->num_squad; i++) {
                 Unit *u = &gs->squad[i];
@@ -259,6 +268,7 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
             if (gs->player.alive && vec2_dist(gs->player.pos, gs->env_lava_pos) < gs->env_lava_radius) {
                 g_combat_deal_damage(&gs->player, 7.0f, true);
                 gs->player.slow_timer = 0.6f;
+                camera_shake(&gs->camera, 0.15f, 0.005f);
                 Vec2 push = vec2_normalize(vec2_sub(gs->player.pos, gs->env_lava_pos));
                 if (vec2_len(push) < 1e-5f) push = (Vec2){1.0f, 0.0f};
                 if (use_physics) {
@@ -283,6 +293,11 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
                 }
             }
         }
+    }
+
+    // Sustained low rumble while any environmental effect is active
+    if (gs->env_active_effect != ENV_EFFECT_NONE && gs->env_effect_timer > 0.0f) {
+        camera_shake(&gs->camera, 0.1f, 0.001f);
     }
 
     if (gs->env_effect_timer <= 0.0f) {
@@ -750,6 +765,7 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
             apply_orb_effect(gs, tg, graph, orb);
             orb->active = false;
             gs->orbs_collected++;
+            g_audio_play(SFX_ORB_PICKUP);
         }
     }
 
@@ -773,6 +789,7 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
         gs->portal.radius_y = 0.012f;
         gs->portal.pulse_timer = 0.0f;
         g_physics_update_portal_sensor(gs);
+        g_audio_play(SFX_PORTAL_OPEN);
     } else if (!gs->is_boss_level && gs->orbs_collected == gs->num_orbs && !gs->portal.active) {
         gs->portal.active = true;
         gs->portal.pos = gs->portal.spawn_pos;
@@ -780,6 +797,7 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
         gs->portal.radius_y = 0.012f;
         gs->portal.pulse_timer = 0.0f;
         g_physics_update_portal_sensor(gs);
+        g_audio_play(SFX_PORTAL_OPEN);
     }
 
     // Portal enter (ellipse collision using normalized distance)
@@ -796,6 +814,7 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
         }
         if (entered) {
             gs->level_complete = true;
+            g_audio_play(SFX_LEVEL_COMPLETE);
         }
     }
 
@@ -812,6 +831,21 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
     if (cam->pos.x > 1.0f - half_view) cam->pos.x = 1.0f - half_view;
     if (cam->pos.y < half_view)        cam->pos.y = half_view;
     if (cam->pos.y > 1.0f - half_view) cam->pos.y = 1.0f - half_view;
+
+    // Camera shake update
+    if (cam->shake_timer > 0.0f) {
+        cam->shake_timer -= fdt;
+        f32 decay = cam->shake_timer > 0.0f ? cam->shake_timer / (cam->shake_timer + fdt) : 0.0f;
+        f32 amp = cam->shake_intensity * decay;
+        cam->shake_offset.x = (game_rand01(gs) * 2.0f - 1.0f) * amp;
+        cam->shake_offset.y = (game_rand01(gs) * 2.0f - 1.0f) * amp;
+        if (cam->shake_timer <= 0.0f) {
+            cam->shake_timer = 0.0f;
+            cam->shake_offset = (Vec2){0.0f, 0.0f};
+        }
+    } else {
+        cam->shake_offset = (Vec2){0.0f, 0.0f};
+    }
 }
 
 void g_game_render(Game *game, SDL_Renderer *renderer, SDL_FRect map_rect) {

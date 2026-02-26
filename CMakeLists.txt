@@ -73,6 +73,7 @@ add_executable(ProceduralAdventure
     src/game/g_unit_gen.c
     src/game/g_particles.c
     src/game/g_physics.c
+    src/game/g_audio.c
 )
 
 target_include_directories(ProceduralAdventure PRIVATE

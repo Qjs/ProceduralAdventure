@@ -1,5 +1,6 @@
 #include "app.h"
 #include "mapgen/mg_raster.h"
+#include "game/g_audio.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -42,6 +43,12 @@ static void restart_game(App *app) {
     app->game_over = false;
     app->upgrading = false;
     app->show_intro = true;
+
+    // Fade in from black
+    app->fade_alpha = 1.0f;
+    app->fade_target = 0.0f;
+    app->fade_speed = 2.0f;
+    app->fade_pending_transition = false;
 }
 
 static void apply_custom_imgui_style(void) {
@@ -83,7 +90,7 @@ static void apply_custom_imgui_style(void) {
 
 bool app_init(App *app, const char *title, int w, int h, s32 seed) {
     memset(app, 0, sizeof(*app));
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return false;
     }
@@ -134,6 +141,14 @@ bool app_init(App *app, const char *title, int w, int h, s32 seed) {
     app->upgrading = false;
     app->show_intro = true;
 
+    // Fade in from black on start
+    app->fade_alpha = 1.0f;
+    app->fade_target = 0.0f;
+    app->fade_speed = 2.0f;
+
+    // Initialize audio
+    g_audio_init();
+
     // Initialize timing
     app->last_time = get_time_seconds();
     app->dt = 0.0;
@@ -147,6 +162,7 @@ bool app_init(App *app, const char *title, int w, int h, s32 seed) {
 }
 
 void app_shutdown(App *app) {
+    g_audio_shutdown();
     g_game_shutdown(&app->game);
     if (app->map_texture) SDL_DestroyTexture(app->map_texture);
     mg_map_free(&app->map);
@@ -178,19 +194,22 @@ void app_update(App *app) {
     app->last_time = now;
     if (app->dt > 0.1) app->dt = 0.1; // clamp to avoid spiral of death
 
-    // Pause game while on intro / upgrade / pause / game-over modal
-    if (app->upgrading || app->show_intro || app->paused || app->game_over) return;
-
-    g_game_update(&app->game, &app->map, app->dt);
-
-    // Check for player death
-    if (!app->game.state.player.alive) {
-        app->game_over = true;
-        return;
+    // Animate fade overlay
+    if (app->fade_alpha != app->fade_target) {
+        f32 fdt = (f32)app->dt;
+        if (app->fade_alpha < app->fade_target) {
+            app->fade_alpha += app->fade_speed * fdt;
+            if (app->fade_alpha >= app->fade_target) app->fade_alpha = app->fade_target;
+        } else {
+            app->fade_alpha -= app->fade_speed * fdt;
+            if (app->fade_alpha <= app->fade_target) app->fade_alpha = app->fade_target;
+        }
     }
 
-    // Level transition — tally XP, regenerate map, show upgrade screen
-    if (app->game.state.level_complete) {
+    // Complete pending fade-out transition
+    if (app->fade_pending_transition && app->fade_alpha >= 1.0f) {
+        app->fade_pending_transition = false;
+
         GameState *gs = &app->game.state;
         u32 earned = gs->enemies_killed * 5 + gs->orbs_collected * 10 + 50;
         app->progression.xp += earned;
@@ -209,6 +228,25 @@ void app_update(App *app) {
         g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
         app->upgrading = true;
         app->show_intro = false;
+        return;
+    }
+
+    // Pause game while on intro / upgrade / pause / game-over modal
+    if (app->upgrading || app->show_intro || app->paused || app->game_over) return;
+
+    g_game_update(&app->game, &app->map, app->dt);
+
+    // Check for player death
+    if (!app->game.state.player.alive) {
+        app->game_over = true;
+        return;
+    }
+
+    // Level transition — start fade-out on portal enter
+    if (app->game.state.level_complete && !app->fade_pending_transition) {
+        app->fade_target = 1.0f;
+        app->fade_speed = 3.0f;
+        app->fade_pending_transition = true;
     }
 }
 
@@ -245,11 +283,13 @@ void app_render(App *app) {
             map_size, map_size
         };
 
-        // Camera-based source rect
+        // Camera-based source rect (apply shake offset)
         Camera *cam = &app->game.state.camera;
         float view_size = 1.0f / cam->zoom;
-        float view_x = cam->pos.x - view_size * 0.5f;
-        float view_y = cam->pos.y - view_size * 0.5f;
+        float eff_x = cam->pos.x + cam->shake_offset.x;
+        float eff_y = cam->pos.y + cam->shake_offset.y;
+        float view_x = eff_x - view_size * 0.5f;
+        float view_y = eff_y - view_size * 0.5f;
 
         if (view_x < 0.0f) view_x = 0.0f;
         if (view_x > 1.0f - view_size) view_x = 1.0f - view_size;
@@ -600,6 +640,10 @@ void app_render(App *app) {
             app->upgrading = false;
             // Re-init game with updated stat levels
             g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+            // Fade in from black
+            app->fade_alpha = 1.0f;
+            app->fade_target = 0.0f;
+            app->fade_speed = 2.0f;
         }
 
         igEnd();
@@ -663,6 +707,14 @@ void app_render(App *app) {
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
         g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+    }
+
+    // Fade overlay (rendered before ImGui so modals appear on top)
+    if (app->fade_alpha > 0.001f) {
+        SDL_SetRenderDrawBlendMode(app->renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, (Uint8)(app->fade_alpha * 255));
+        SDL_FRect full = {0, 0, (float)win_w, (float)win_h};
+        SDL_RenderFillRect(app->renderer, &full);
     }
 
     ImGui_SDL3_Render(app->renderer);

@@ -3,6 +3,7 @@
 #include "g_terrain.h"
 #include "g_particles.h"
 #include "g_physics.h"
+#include "g_audio.h"
 
 static inline f32 clamp01f(f32 x) {
     if (x < 0.0f) return 0.0f;
@@ -134,10 +135,12 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
                         g_particles_heal(&gs->particles, ally->pos);
                     }
                 }
+                g_audio_play(SFX_HEAL);
             } else {
                 best->hp += u->damage; // healer "damage" is heal amount
                 if (best->hp > best->max_hp) best->hp = best->max_hp;
                 g_particles_heal(&gs->particles, best->pos);
+                g_audio_play(SFX_HEAL);
             }
             u->cooldown_timer = u->cooldown;
         }
@@ -206,12 +209,21 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         bool magic = (u->role == ROLE_MAGE);
         g_combat_spawn_projectile(gs, u->pos, target_pos, dmg, u->team, proj_color,
                                   slow, arrow, magic, knockback_scale);
+        if (arrow)
+            g_audio_play(SFX_ARROW_SHOT);
+        else
+            g_audio_play(SFX_MAGIC_CAST);
     } else {
         // Melee hit
         f32 melee_damage = u->damage * role_damage_multiplier(gs, u);
         static const u8 spark_color[4] = {220, 220, 230, 255};
         g_particles_slash(&gs->particles, target->pos, u->facing, spark_color);
         g_combat_deal_damage(target, melee_damage, false);
+        if (target == &gs->player) {
+            gs->camera.shake_timer = 0.15f;
+            gs->camera.shake_intensity = 0.004f;
+        }
+        g_audio_play(SFX_MELEE_HIT);
 
         // Boss melee has strong knockback on player team.
         if (u->team == TEAM_ENEMY && u->is_boss && target->alive) {
@@ -236,6 +248,7 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         }
         if (!target->alive) {
             g_particles_burst(&gs->particles, target->pos, 12, target->color);
+            g_audio_play(SFX_DEATH);
             if (u->team == TEAM_PLAYER)
                 gs->enemies_killed++;
         }
@@ -369,6 +382,8 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 vec2_dist(p->pos, gs->player.pos) < hit_radius + gs->player.radius) {
                 g_combat_deal_damage(&gs->player, p->damage, p->is_magic);
                 if (p->applies_slow) gs->player.slow_timer = 2.0f;
+                gs->camera.shake_timer = 0.12f;
+                gs->camera.shake_intensity = 0.003f;
                 hit = true;
             }
             // Check squad

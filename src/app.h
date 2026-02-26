@@ -31,6 +31,12 @@ typedef struct {
     bool          paused;
     bool          game_over;
 
+    // Screen fade
+    f32           fade_alpha;
+    f32           fade_target;
+    f32           fade_speed;
+    bool          fade_pending_transition;
+
     // UI toggle state
     bool          show_map_gen;
     bool          show_player_status;

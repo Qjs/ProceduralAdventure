@@ -173,6 +173,9 @@ typedef struct {
 typedef struct {
     Vec2 pos;
     f32  zoom;
+    Vec2 shake_offset;
+    f32  shake_timer;
+    f32  shake_intensity;
 } Camera;
 
 typedef struct GPhysicsState GPhysicsState;
