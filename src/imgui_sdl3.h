@@ -13,6 +13,7 @@ void ImGui_SDL3_Shutdown(void);
 bool ImGui_SDL3_ProcessEvent(const SDL_Event *e);
 void ImGui_SDL3_NewFrame(void);
 void ImGui_SDL3_Render(SDL_Renderer *r);
+bool ImGui_SDL3_LoadFont(const char *path, float size_px);
 
 #ifdef __cplusplus
 }

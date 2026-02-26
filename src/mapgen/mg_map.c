@@ -98,18 +98,18 @@ bool mg_map_imgui_controls(Map *map) {
 
     igSliderFloat("Land Threshold", &p->land_threshold, -0.5f, 0.5f, "%.2f", 0);
 
-    igSeparatorText("Rivers");
+    igSeparatorText("Waterways");
     int rivers_i = (int)p->num_rivers;
     if (igSliderInt("Num Rivers", &rivers_i, 0, 50, "%d", 0))
         p->num_rivers = (u32)rivers_i;
     igSliderFloat("River Min Elev", &p->river_min_elev, 0.2f, 0.9f, "%.2f", 0);
 
-    igSeparatorText("Elevation");
+    igSeparatorText("Peaks & Valleys");
     igSliderFloat("Elev Gamma", &p->elevation_gamma, 0.2f, 3.0f, "%.2f", 0);
     igSliderFloat("Snow Threshold", &p->snow_threshold, 0.3f, 1.0f, "%.2f", 0);
 
     igSpacing();
-    if (igButton("Regenerate", (ImVec2_c){0, 0}))
+    if (igButton("Redraw the Map", (ImVec2_c){0, 0}))
         regenerate = true;
 
     return regenerate;

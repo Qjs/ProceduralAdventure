@@ -13,9 +13,9 @@ static f64 get_time_seconds(void) {
 
 static const char *env_effect_name(EnvironmentalEffect e) {
     switch (e) {
-        case ENV_EFFECT_BOULDERS: return "Boulders";
-        case ENV_EFFECT_WAVE:     return "Wave";
-        case ENV_EFFECT_LAVA:     return "Lava Patch";
+        case ENV_EFFECT_BOULDERS: return "Boulder Storm";
+        case ENV_EFFECT_WAVE:     return "Tidal Surge";
+        case ENV_EFFECT_LAVA:     return "Molten Inferno";
         case ENV_EFFECT_NONE:
         default:                  return "None";
     }
@@ -103,6 +103,10 @@ bool app_init(App *app, const char *title, int w, int h, s32 seed) {
     if (!ImGui_SDL3_Init(app->window, app->renderer)) {
         SDL_Log("ImGui_SDL3_Init failed");
         return false;
+    }
+    if (!ImGui_SDL3_LoadFont("assets/Almendra-Regular.ttf", 18.0f) &&
+        !ImGui_SDL3_LoadFont("../assets/Almendra-Regular.ttf", 18.0f)) {
+        SDL_Log("Font load failed, using default");
     }
     apply_custom_imgui_style();
 
@@ -278,25 +282,25 @@ void app_render(App *app) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
 
     igBegin("##SidePanel", NULL, panel_flags);
-    igSeparatorText("Panel");
+    igSeparatorText("Command Tent");
 
-    igCheckbox("Show Map Generation", &app->show_map_gen);
-    igCheckbox("Show Player Status", &app->show_player_status);
-    igCheckbox("Show Minimap", &app->show_minimap);
+    igCheckbox("Cartographer's Table", &app->show_map_gen);
+    igCheckbox("Expedition Log", &app->show_player_status);
+    igCheckbox("Scout's Map", &app->show_minimap);
 
     igSpacing();
 
     // -- Map Generation section --
     bool regenerate = false;
     if (app->show_map_gen) {
-        if (igCollapsingHeader_TreeNodeFlags("Map Generation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (igCollapsingHeader_TreeNodeFlags("Cartographer's Table", ImGuiTreeNodeFlags_DefaultOpen)) {
             regenerate = mg_map_imgui_controls(&app->map);
         }
     }
 
     // -- Player Status section --
     if (app->show_player_status) {
-        if (igCollapsingHeader_TreeNodeFlags("Player Status", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (igCollapsingHeader_TreeNodeFlags("Expedition Log", ImGuiTreeNodeFlags_DefaultOpen)) {
             Unit *player = &app->game.state.player;
             GameState *gs = &app->game.state;
             float hp_frac = player->hp / player->max_hp;
@@ -316,63 +320,63 @@ void app_render(App *app) {
             if (cd_frac < 0.0f) cd_frac = 0.0f;
             if (cd_frac > 1.0f) cd_frac = 1.0f;
 
-            const char *cd_label = cd_frac >= 1.0f ? "Ready" : "Cooldown";
+            const char *cd_label = cd_frac >= 1.0f ? "Strike Ready" : "Recovering...";
             igPushStyleColor_Vec4(ImGuiCol_PlotHistogram,
                 (ImVec4_c){0.2f, 0.5f, 0.9f, 1.0f});
             igProgressBar(cd_frac, (ImVec2_c){-1, 0}, cd_label);
             igPopStyleColor(1);
 
-            igText("Pos: (%.2f, %.2f)", player->pos.x, player->pos.y);
-            igText("Level: %u  Orbs: %u / %u", app->level + 1, app->game.state.orbs_collected, NUM_COLLECT_ORBS);
-            igText("XP: %u  Total XP: %u", app->progression.xp, app->progression.total_xp);
+            igText("Bearing: (%.2f, %.2f)", player->pos.x, player->pos.y);
+            igText("Expedition %u  Relics: %u / %u", app->level + 1, app->game.state.orbs_collected, NUM_COLLECT_ORBS);
+            igText("Glory: %u  Lifetime Glory: %u", app->progression.xp, app->progression.total_xp);
 
             igSpacing();
-            igSeparatorText("Active Effects");
+            igSeparatorText("Arcane Auras");
             bool any_effect = false;
             if (gs->melee_boost_timer > 0.0f) {
                 igTextColored((ImVec4_c){1.0f, 0.45f, 0.45f, 1.0f},
-                              "Melee Boost: %.1fs", gs->melee_boost_timer);
+                              "Warrior's Fury: %.1fs", gs->melee_boost_timer);
                 any_effect = true;
             }
             if (gs->archer_boost_timer > 0.0f) {
                 igTextColored((ImVec4_c){1.0f, 0.8f, 0.4f, 1.0f},
-                              "Archer Boost: %.1fs", gs->archer_boost_timer);
+                              "Eagle Eye: %.1fs", gs->archer_boost_timer);
                 any_effect = true;
             }
             if (gs->mage_boost_timer > 0.0f) {
                 igTextColored((ImVec4_c){0.7f, 0.5f, 1.0f, 1.0f},
-                              "Mage Boost: %.1fs", gs->mage_boost_timer);
+                              "Arcane Surge: %.1fs", gs->mage_boost_timer);
                 any_effect = true;
             }
             if (gs->env_active_effect != ENV_EFFECT_NONE) {
                 igTextColored((ImVec4_c){1.0f, 0.6f, 0.3f, 1.0f},
-                              "Hazard (%s): %.1fs",
+                              "Peril — %s: %.1fs",
                               env_effect_name(gs->env_active_effect), gs->env_effect_timer);
                 any_effect = true;
             }
             if (!any_effect) {
-                igTextDisabled("No active boosts");
+                igTextDisabled("The air is calm... for now");
             }
         }
     }
 
     // -- Squad Status section --
     if (app->show_player_status) {
-        if (igCollapsingHeader_TreeNodeFlags("Squad Status", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (igCollapsingHeader_TreeNodeFlags("War Party", ImGuiTreeNodeFlags_DefaultOpen)) {
             static const char *stance_names[] = {
-                [STANCE_AGGRESSIVE] = "Aggressive",
-                [STANCE_DEFENSIVE]  = "Defensive",
-                [STANCE_PASSIVE]    = "Passive",
+                [STANCE_AGGRESSIVE] = "Reckless Assault",
+                [STANCE_DEFENSIVE]  = "Iron Guard",
+                [STANCE_PASSIVE]    = "Watchful Calm",
             };
             const char *stance = stance_names[app->game.state.squad_stance];
-            igText("Stance: %s  [1/2/3]", stance);
+            igText("Formation: %s  [1/2/3]", stance);
             igSpacing();
 
             static const char *role_names[] = {
-                [ROLE_MELEE]  = "Melee",
-                [ROLE_ARCHER] = "Archer",
-                [ROLE_HEALER] = "Healer",
-                [ROLE_MAGE]   = "Mage",
+                [ROLE_MELEE]  = "Knight",
+                [ROLE_ARCHER] = "Ranger",
+                [ROLE_HEALER] = "Cleric",
+                [ROLE_MAGE]   = "Sorcerer",
             };
             GameState *gs = &app->game.state;
             for (u32 i = 0; i < gs->num_squad; i++) {
@@ -412,7 +416,7 @@ void app_render(App *app) {
                 if (cd_frac < 0.0f) cd_frac = 0.0f;
                 if (cd_frac > 1.0f) cd_frac = 1.0f;
 
-                const char *cd_label = cd_frac >= 1.0f ? "Ready" : "Cooldown";
+                const char *cd_label = cd_frac >= 1.0f ? "Strike Ready" : "Recovering...";
                 igPushStyleColor_Vec4(ImGuiCol_PlotHistogram,
                     (ImVec4_c){0.2f, 0.5f, 0.9f, 1.0f});
                 igProgressBar(cd_frac, (ImVec2_c){-1, 0}, cd_label);
@@ -426,34 +430,34 @@ void app_render(App *app) {
     }
 
     // -- Stance Info section (collapsed by default) --
-    if (igCollapsingHeader_TreeNodeFlags("Stance Info", 0)) {
-        igTextColored((ImVec4_c){0.9f, 0.6f, 0.2f, 1.0f}, "Melee");
-        igBulletText("[1] Cleave: AoE splash 50%% to nearby");
-        igBulletText("[2] Armor Up: +3 bonus armor");
-        igBulletText("[3] Parry: 33%% reflect 50%% dmg");
+    if (igCollapsingHeader_TreeNodeFlags("Battle Codex", 0)) {
+        igTextColored((ImVec4_c){0.9f, 0.6f, 0.2f, 1.0f}, "Knight");
+        igBulletText("[1] Cleave: Carve through nearby foes (50%% splash)");
+        igBulletText("[2] Fortify: Don steel-forged armor (+3 defense)");
+        igBulletText("[3] Riposte: Deflect blows back at attackers (33%%)");
         igSpacing();
 
-        igTextColored((ImVec4_c){0.4f, 0.8f, 0.3f, 1.0f}, "Archer");
-        igBulletText("[1] Piercing: arrow continues through");
-        igBulletText("[2] Pushback: knock enemy back");
-        igBulletText("[3] Speed Boost (Water Walk)");
+        igTextColored((ImVec4_c){0.4f, 0.8f, 0.3f, 1.0f}, "Ranger");
+        igBulletText("[1] Piercing Shot: Arrow punches through all in its path");
+        igBulletText("[2] Gale Arrow: Blast enemies backward");
+        igBulletText("[3] Pathfinder: Traverse any terrain with haste");
         igSpacing();
 
-        igTextColored((ImVec4_c){0.3f, 0.9f, 0.7f, 1.0f}, "Healer");
-        igBulletText("[1] Direct Heal (single target)");
-        igBulletText("[2] AoE Heal: 40%% to all in range");
-        igBulletText("[3] Armor Aura: +2 to nearby allies");
+        igTextColored((ImVec4_c){0.3f, 0.9f, 0.7f, 1.0f}, "Cleric");
+        igBulletText("[1] Mending Light: Restore a single ally's wounds");
+        igBulletText("[2] Radiant Burst: Heal all nearby allies (40%%)");
+        igBulletText("[3] Blessed Ward: Shield allies with holy armor (+2)");
         igSpacing();
 
-        igTextColored((ImVec4_c){0.6f, 0.4f, 1.0f, 1.0f}, "Mage");
-        igBulletText("[1] Fire: 1.5x damage");
-        igBulletText("[2] Ice: slow enemies");
-        igBulletText("[3] Water Walk + Speed Boost");
+        igTextColored((ImVec4_c){0.6f, 0.4f, 1.0f, 1.0f}, "Sorcerer");
+        igBulletText("[1] Fireball: Unleash searing flames (1.5x damage)");
+        igBulletText("[2] Frostbolt: Chill enemies to a crawl");
+        igBulletText("[3] Levitate: Walk on water with arcane swiftness");
     }
 
     // -- Minimap section --
     if (app->show_minimap && app->map_texture) {
-        if (igCollapsingHeader_TreeNodeFlags("World Map", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (igCollapsingHeader_TreeNodeFlags("Scout's Map", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImVec2_c avail = igGetContentRegionAvail();
             float mm_size = avail.x;
             if (mm_size > avail.y) mm_size = avail.y;
@@ -520,23 +524,23 @@ void app_render(App *app) {
     if (app->show_intro) {
         ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
         igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
-        igSetNextWindowSize((ImVec2_c){520, 0}, ImGuiCond_Always);
+        igSetNextWindowSize((ImVec2_c){600, 0}, ImGuiCond_Always);
 
         ImGuiWindowFlags intro_flags =
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
 
-        igBegin("Welcome to Procedural Adventure", NULL, intro_flags);
-        igTextWrapped("Lead your squad across a procedural island, collect 5 orbs, and enter the portal to advance.");
+        igBegin("The Wilds Await", NULL, intro_flags);
+        igTextWrapped("Brave adventurer! A chain of uncharted islands stretches before you. Rally your war party, gather 5 ancient relics, and step through the portal to reach the next frontier.");
         igSpacing();
-        igBulletText("Move with WASD / Arrow Keys");
-        igBulletText("Switch squad stance with [1] Aggressive, [2] Defensive, [3] Passive");
-        igBulletText("Companions: Melee, Archer, Healer, Mage (each changes behavior by stance)");
-        igBulletText("Every 5th level: collect orbs, then defeat a boss to unlock the portal");
+        igBulletText("Chart your course with WASD / Arrow Keys");
+        igBulletText("Command your formation: [1] Reckless Assault  [2] Iron Guard  [3] Watchful Calm");
+        igBulletText("Your party: Knight, Ranger, Cleric, Sorcerer — each fights differently per formation");
+        igBulletText("Every 5th expedition: gather relics, then slay the guardian to unseal the portal");
         igSpacing();
-        igTextWrapped("Tip: stance switching is your strongest tactical tool.");
+        igTextWrapped("Remember: a wise commander shifts formation often. It is your greatest weapon.");
         igSeparator();
-        if (igButton("Begin Adventure", (ImVec2_c){-1, 36})) {
+        if (igButton("Embark!", (ImVec2_c){-1, 36})) {
             app->show_intro = false;
         }
         igEnd();
@@ -544,14 +548,13 @@ void app_render(App *app) {
 
     // ---- Upgrade screen modal ----
     if (app->upgrading) {
-        static const char *role_names[] = { "Melee", "Archer", "Healer", "Mage" };
-        // Per-role stat names: Melee gets Armor instead of Range,
-        // Healer shows Heal instead of Damage
+        static const char *role_names[] = { "Knight", "Ranger", "Cleric", "Sorcerer" };
+        // Per-role stat names with adventurous labels
         static const char *stat_names[MAX_SQUAD][4] = {
-            { "HP", "Damage", "Armor",  "Cooldown" },  // Melee
-            { "HP", "Damage", "Range",  "Cooldown" },  // Archer
-            { "HP", "Heal",   "Range",  "Cooldown" },  // Healer
-            { "HP", "Damage", "Range",  "Cooldown" },  // Mage
+            { "Vitality", "Might",     "Armor",  "Swiftness" },  // Knight
+            { "Vitality", "Precision",  "Reach",  "Swiftness" },  // Ranger
+            { "Vitality", "Mending",   "Reach",  "Swiftness" },  // Cleric
+            { "Vitality", "Sorcery",   "Reach",  "Swiftness" },  // Sorcerer
         };
 
         ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
@@ -562,10 +565,10 @@ void app_render(App *app) {
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
 
-        igBegin("Upgrades", NULL, modal_flags);
+        igBegin("Forge of Champions", NULL, modal_flags);
 
-        igText("Level %u", app->level + 1);
-        igText("XP: %u  (Total: %u)", app->progression.xp, app->progression.total_xp);
+        igText("Expedition %u", app->level + 1);
+        igText("Glory: %u  (Lifetime: %u)", app->progression.xp, app->progression.total_xp);
         igSeparator();
 
         for (u32 i = 0; i < MAX_SQUAD; i++) {
@@ -593,7 +596,7 @@ void app_render(App *app) {
 
         igSpacing();
         igSeparator();
-        if (igButton("Start Level", (ImVec2_c){-1, 32})) {
+        if (igButton("March Forth!", (ImVec2_c){-1, 32})) {
             app->upgrading = false;
             // Re-init game with updated stat levels
             g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
@@ -612,13 +615,13 @@ void app_render(App *app) {
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
 
-        igBegin("Paused", NULL, pause_flags);
-        igText("Game Paused");
+        igBegin("Camp Rest", NULL, pause_flags);
+        igText("Your party rests by the fire...");
         igSpacing();
-        if (igButton("Resume", (ImVec2_c){-1, 36})) {
+        if (igButton("Break Camp", (ImVec2_c){-1, 36})) {
             app->paused = false;
         }
-        if (igButton("Restart Game", (ImVec2_c){-1, 36})) {
+        if (igButton("Abandon Quest", (ImVec2_c){-1, 36})) {
             restart_game(app);
         }
         igEnd();
@@ -634,16 +637,16 @@ void app_render(App *app) {
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
 
-        igBegin("Game Over", NULL, go_flags);
-        igTextColored((ImVec4_c){1.0f, 0.3f, 0.3f, 1.0f}, "You have fallen!");
+        igBegin("Fallen in Battle", NULL, go_flags);
+        igTextColored((ImVec4_c){1.0f, 0.3f, 0.3f, 1.0f}, "Your quest ends here, brave adventurer...");
         igSpacing();
         igSeparator();
-        igText("Level Reached: %u", app->level + 1);
-        igText("Enemies Killed: %u", app->game.state.enemies_killed);
-        igText("Total XP Earned: %u", app->progression.total_xp);
+        igText("Expeditions Survived: %u", app->level + 1);
+        igText("Foes Vanquished: %u", app->game.state.enemies_killed);
+        igText("Glory Earned: %u", app->progression.total_xp);
         igSeparator();
         igSpacing();
-        if (igButton("Restart Game", (ImVec2_c){-1, 36})) {
+        if (igButton("Rise Again", (ImVec2_c){-1, 36})) {
             restart_game(app);
         }
         igEnd();

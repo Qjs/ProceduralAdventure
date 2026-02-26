@@ -41,4 +41,14 @@ void ImGui_SDL3_Render(SDL_Renderer *r)
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), r);
 }
 
+bool ImGui_SDL3_LoadFont(const char *path, float size_px)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    ImFont *font = io.Fonts->AddFontFromFileTTF(path, size_px);
+    if (!font)
+        return false;
+    io.FontDefault = font;
+    return true;
+}
+
 } /* extern "C" */
