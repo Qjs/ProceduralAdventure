@@ -500,7 +500,7 @@ void g_combat_update_squad_states(GameState *gs) {
                     all_full = false;
             }
 
-            if (u->state == STATE_FOLLOW && ally_hurt) {
+            if ((u->state == STATE_FOLLOW || u->state == STATE_ATTACK) && ally_hurt) {
                 u->state = STATE_HEAL;
             } else if (u->state == STATE_HEAL && all_full) {
                 u->state = STATE_FOLLOW;

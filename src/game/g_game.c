@@ -744,9 +744,9 @@ void g_game_update(Game *game, const Map *map, f64 dt) {
     apply_stance_auras(gs);
 
     // Combat
+    g_combat_update_projectiles(gs, fdt);
     g_combat_update_squad_states(gs);
     g_combat_update(gs, tg, graph, fdt);
-    g_combat_update_projectiles(gs, fdt);
     update_environment_effect(gs, tg, graph, fdt);
     update_river_damage(gs, map, tg, graph, fdt);
     g_particles_update(&gs->particles, fdt);
