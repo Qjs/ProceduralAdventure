@@ -2,3 +2,5 @@
 build/
 build-web/
 compile_commands.json
+Plan.md
+game_design.md
