@@ -352,9 +352,9 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                     if (p->is_arrow && gs->squad_stance == STANCE_DEFENSIVE && enemy->alive) {
                         Vec2 push_dir = vec2_normalize(p->vel);
                         if (g_physics_is_active(gs)) {
-                            g_physics_apply_enemy_impulse(gs, e, vec2_scale(push_dir, 0.0005f * p->knockback_scale));
+                            g_physics_apply_enemy_impulse(gs, e, vec2_scale(push_dir, 0.00025f * p->knockback_scale));
                         } else {
-                            enemy->pos = vec2_add(enemy->pos, vec2_scale(push_dir, 0.008f * p->knockback_scale));
+                            enemy->pos = vec2_add(enemy->pos, vec2_scale(push_dir, 0.004f * p->knockback_scale));
                             // Clamp to bounds
                             if (enemy->pos.x < 0.0f) enemy->pos.x = 0.0f;
                             if (enemy->pos.x > 1.0f) enemy->pos.x = 1.0f;
