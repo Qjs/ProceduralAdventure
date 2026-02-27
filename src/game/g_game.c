@@ -150,7 +150,7 @@ static void setup_boss_enemy(GameState *gs, u32 level, u32 total_upgrades) {
     boss->alive = false; // summoned after orb objective
     boss->state = STATE_IDLE;
     boss->radius = 0.02f;
-    boss->max_hp *= 6.0f;
+    boss->max_hp *= 8.0f;
     boss->hp = boss->max_hp;
     boss->damage *= 2.2f;
     boss->speed *= 0.9f;
@@ -364,7 +364,7 @@ void g_game_init(Game *game, SDL_Renderer *renderer, const MapGraph *graph,
 
     // Fisher-Yates partial shuffle to pick NUM_COLLECT_ORBS + 1 random cells
     // (5 for orbs, 1 for portal spawn location)
-    u32 rng_state = (u32)(size_t)graph ^ 0xDEADBEEF;
+    u32 rng_state = (u32)(size_t)graph ^ 0xDEADBEEF ^ (level * 2654435761u);
     if (rng_state == 0) rng_state = 1;
     u32 total_pick = (NUM_COLLECT_ORBS + 1) < num_land ? (NUM_COLLECT_ORBS + 1) : num_land;
     for (u32 i = 0; i < total_pick; i++) {

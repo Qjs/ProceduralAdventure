@@ -54,7 +54,7 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
         { ROLE_MELEE,  220, 60,  60,  0.075f, 120.0f, 4.0f },
         { ROLE_ARCHER,  60, 180, 60,  0.08f,   80.0f, 1.0f },
         { ROLE_HEALER, 240, 220, 60,  0.07f,   90.0f, 1.0f },
-        { ROLE_MAGE,    80, 120, 240, 0.065f,  70.0f, 0.0f },
+        { ROLE_MAGE,    80, 120, 240, 0.07f,  70.0f, 0.0f },
     };
 
     static const Vec2 offsets[MAX_SQUAD] = {

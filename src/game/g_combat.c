@@ -220,8 +220,8 @@ static void process_unit_attack(GameState *gs, const TerrainGrid *tg,
         g_particles_slash(&gs->particles, target->pos, u->facing, spark_color);
         g_combat_deal_damage(target, melee_damage, false);
         if (target == &gs->player) {
-            gs->camera.shake_timer = 0.15f;
-            gs->camera.shake_intensity = 0.004f;
+            gs->camera.shake_timer = 0.08f;
+            gs->camera.shake_intensity = 0.002f;
         }
         g_audio_play(SFX_MELEE_HIT);
 
@@ -382,8 +382,8 @@ void g_combat_update_projectiles(GameState *gs, f32 dt) {
                 vec2_dist(p->pos, gs->player.pos) < hit_radius + gs->player.radius) {
                 g_combat_deal_damage(&gs->player, p->damage, p->is_magic);
                 if (p->applies_slow) gs->player.slow_timer = 2.0f;
-                gs->camera.shake_timer = 0.12f;
-                gs->camera.shake_intensity = 0.003f;
+                gs->camera.shake_timer = 0.06f;
+                gs->camera.shake_intensity = 0.0015f;
                 hit = true;
             }
             // Check squad

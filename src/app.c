@@ -111,8 +111,8 @@ bool app_init(App *app, const char *title, int w, int h, s32 seed) {
         SDL_Log("ImGui_SDL3_Init failed");
         return false;
     }
-    if (!ImGui_SDL3_LoadFont("assets/Almendra-Regular.ttf", 18.0f) &&
-        !ImGui_SDL3_LoadFont("../assets/Almendra-Regular.ttf", 18.0f)) {
+    if (!ImGui_SDL3_LoadFont("assets/Almendra-Regular.ttf", 22.0f) &&
+        !ImGui_SDL3_LoadFont("../assets/Almendra-Regular.ttf", 22.0f)) {
         SDL_Log("Font load failed, using default");
     }
     apply_custom_imgui_style();
@@ -276,39 +276,36 @@ void app_render(App *app) {
     SDL_FRect dst_rect = {0};
     SDL_FRect virtual_map_rect = {0};
     if (app->map_texture) {
-        float map_size = game_w < game_h ? game_w : game_h;
-        dst_rect = (SDL_FRect){
-            (game_w - map_size) * 0.5f,
-            (game_h - map_size) * 0.5f,
-            map_size, map_size
-        };
+        dst_rect = (SDL_FRect){0, 0, game_w, game_h};
 
         // Camera-based source rect (apply shake offset)
         Camera *cam = &app->game.state.camera;
-        float view_size = 1.0f / cam->zoom;
+        float aspect = game_w / game_h;
+        float view_h = 1.0f / cam->zoom;
+        float view_w = view_h * aspect;
         float eff_x = cam->pos.x + cam->shake_offset.x;
         float eff_y = cam->pos.y + cam->shake_offset.y;
-        float view_x = eff_x - view_size * 0.5f;
-        float view_y = eff_y - view_size * 0.5f;
+        float view_x = eff_x - view_w * 0.5f;
+        float view_y = eff_y - view_h * 0.5f;
 
         if (view_x < 0.0f) view_x = 0.0f;
-        if (view_x > 1.0f - view_size) view_x = 1.0f - view_size;
+        if (view_x > 1.0f - view_w) view_x = 1.0f - view_w;
         if (view_y < 0.0f) view_y = 0.0f;
-        if (view_y > 1.0f - view_size) view_y = 1.0f - view_size;
+        if (view_y > 1.0f - view_h) view_y = 1.0f - view_h;
 
         float tex_w, tex_h;
         SDL_GetTextureSize(app->map_texture, &tex_w, &tex_h);
         SDL_FRect src_rect = {
             view_x * tex_w, view_y * tex_h,
-            view_size * tex_w, view_size * tex_h
+            view_w * tex_w, view_h * tex_h
         };
         SDL_RenderTexture(app->renderer, app->map_texture, &src_rect, &dst_rect);
 
         virtual_map_rect = (SDL_FRect){
-            dst_rect.x - (view_x / view_size) * dst_rect.w,
-            dst_rect.y - (view_y / view_size) * dst_rect.h,
-            dst_rect.w / view_size,
-            dst_rect.h / view_size
+            dst_rect.x - (view_x / view_w) * dst_rect.w,
+            dst_rect.y - (view_y / view_h) * dst_rect.h,
+            dst_rect.w / view_w,
+            dst_rect.h / view_h
         };
     }
 
@@ -513,16 +510,18 @@ void app_render(App *app) {
             ImDrawList *dl = igGetWindowDrawList();
 
             Camera *cam = &app->game.state.camera;
-            float view_size = 1.0f / cam->zoom;
-            float vx = cam->pos.x - view_size * 0.5f;
-            float vy = cam->pos.y - view_size * 0.5f;
+            float mm_aspect = game_w / game_h;
+            float view_h_mm = 1.0f / cam->zoom;
+            float view_w_mm = view_h_mm * mm_aspect;
+            float vx = cam->pos.x - view_w_mm * 0.5f;
+            float vy = cam->pos.y - view_h_mm * 0.5f;
             if (vx < 0.0f) vx = 0.0f;
-            if (vx > 1.0f - view_size) vx = 1.0f - view_size;
+            if (vx > 1.0f - view_w_mm) vx = 1.0f - view_w_mm;
             if (vy < 0.0f) vy = 0.0f;
-            if (vy > 1.0f - view_size) vy = 1.0f - view_size;
+            if (vy > 1.0f - view_h_mm) vy = 1.0f - view_h_mm;
 
             ImVec2_c rect_min = {cursor.x + vx * mm_size, cursor.y + vy * mm_size};
-            ImVec2_c rect_max = {rect_min.x + view_size * mm_size, rect_min.y + view_size * mm_size};
+            ImVec2_c rect_max = {rect_min.x + view_w_mm * mm_size, rect_min.y + view_h_mm * mm_size};
             ImDrawList_AddRect(dl, rect_min, rect_max,
                                0xC8FFFFFF, 0.0f, 0, 1.5f);
 
@@ -618,13 +617,16 @@ void app_render(App *app) {
             for (u32 s = 0; s < 4; s++) {
                 igPushID_Int((int)s);
                 u32 lvl = app->progression.stat_levels[i][s];
+                u32 cost = 15 * (lvl + 1);
                 igText("  %s Lv.%u", stat_names[i][s], lvl);
                 igSameLine(0, 8);
-                bool can_buy = app->progression.xp >= 15;
+                bool can_buy = app->progression.xp >= cost;
                 if (!can_buy) igBeginDisabled(true);
-                if (igSmallButton("+")) {
+                char btn_label[32];
+                snprintf(btn_label, sizeof(btn_label), "+ (%u)", cost);
+                if (igSmallButton(btn_label)) {
                     app->progression.stat_levels[i][s]++;
-                    app->progression.xp -= 15;
+                    app->progression.xp -= cost;
                 }
                 if (!can_buy) igEndDisabled();
                 igPopID();
