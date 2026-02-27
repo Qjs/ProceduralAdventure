@@ -29,6 +29,11 @@ static bool is_boss_level_index(u32 level) {
 static void restart_game(App *app) {
     app->level = 0;
     memset(&app->progression, 0, sizeof(app->progression));
+    app->progression.num_squad = 4;
+    app->progression.squad_roles[0] = ROLE_MELEE;
+    app->progression.squad_roles[1] = ROLE_ARCHER;
+    app->progression.squad_roles[2] = ROLE_HEALER;
+    app->progression.squad_roles[3] = ROLE_MAGE;
     app->map.params.seed = (u32)time(NULL) % 1001;
     app->map.params.boss_theme = is_boss_level_index(app->level);
     app->map.lava_rivers = is_boss_level_index(app->level);
@@ -38,10 +43,13 @@ static void restart_game(App *app) {
         app->map_texture = NULL;
     }
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
-    g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+    g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                app->progression.squad_roles, app->progression.num_squad,
+                app->progression.stat_levels);
     app->paused = false;
     app->game_over = false;
     app->upgrading = false;
+    app->recruiting = false;
     app->show_intro = true;
 
     // Fade in from black
@@ -136,8 +144,17 @@ bool app_init(App *app, const char *title, int w, int h, s32 seed) {
     app->map_texture = NULL;
     mg_upload_texture(&app->map, app->renderer, &app->map_texture);
 
+    // Default roster
+    app->progression.num_squad = 4;
+    app->progression.squad_roles[0] = ROLE_MELEE;
+    app->progression.squad_roles[1] = ROLE_ARCHER;
+    app->progression.squad_roles[2] = ROLE_HEALER;
+    app->progression.squad_roles[3] = ROLE_MAGE;
+
     // Initialize game state
-    g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+    g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                app->progression.squad_roles, app->progression.num_squad,
+                app->progression.stat_levels);
     app->upgrading = false;
     app->show_intro = true;
 
@@ -180,7 +197,7 @@ void app_process_events(App *app) {
             app->running = false;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
-            if (!app->show_intro && !app->upgrading && !app->game_over) {
+            if (!app->show_intro && !app->upgrading && !app->recruiting && !app->game_over) {
                 app->paused = !app->paused;
             }
         }
@@ -215,6 +232,8 @@ void app_update(App *app) {
         app->progression.xp += earned;
         app->progression.total_xp += earned;
 
+        // Check if recruitment should happen (boss level, party not full)
+        bool was_boss = is_boss_level_index(app->level);
         app->level++;
         app->map.params.seed++;
         app->map.params.boss_theme = is_boss_level_index(app->level);
@@ -225,14 +244,20 @@ void app_update(App *app) {
             app->map_texture = NULL;
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
-        g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
-        app->upgrading = true;
+        g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                    app->progression.squad_roles, app->progression.num_squad,
+                    app->progression.stat_levels);
+        if (was_boss && app->progression.num_squad < MAX_SQUAD) {
+            app->recruiting = true;
+        } else {
+            app->upgrading = true;
+        }
         app->show_intro = false;
         return;
     }
 
-    // Pause game while on intro / upgrade / pause / game-over modal
-    if (app->upgrading || app->show_intro || app->paused || app->game_over) return;
+    // Pause game while on intro / upgrade / recruit / pause / game-over modal
+    if (app->upgrading || app->recruiting || app->show_intro || app->paused || app->game_over) return;
 
     g_game_update(&app->game, &app->map, app->dt);
 
@@ -585,15 +610,71 @@ void app_render(App *app) {
         igEnd();
     }
 
+    // ---- Recruitment screen modal ----
+    if (app->recruiting) {
+        ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
+        igSetNextWindowPos(center, ImGuiCond_Always, (ImVec2_c){0.5f, 0.5f});
+        igSetNextWindowSize((ImVec2_c){420, 0}, ImGuiCond_Always);
+
+        ImGuiWindowFlags recruit_flags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+
+        igBegin("Rally New Ally", NULL, recruit_flags);
+        igText("Your party grows stronger! Choose a new companion:");
+        igText("Party: %u / %u", app->progression.num_squad, MAX_SQUAD);
+        igSpacing();
+        igSeparator();
+        igSpacing();
+
+        static const struct { UnitRole role; const char *name; ImVec4_c color; } recruit_opts[] = {
+            { ROLE_MELEE,  "Knight",   {0.86f, 0.24f, 0.24f, 1.0f} },
+            { ROLE_ARCHER, "Ranger",   {0.24f, 0.71f, 0.24f, 1.0f} },
+            { ROLE_HEALER, "Cleric",   {0.94f, 0.86f, 0.24f, 1.0f} },
+            { ROLE_MAGE,   "Sorcerer", {0.31f, 0.47f, 0.94f, 1.0f} },
+        };
+
+        for (u32 r = 0; r < 4; r++) {
+            igPushID_Int((int)r);
+            igPushStyleColor_Vec4(ImGuiCol_Button, recruit_opts[r].color);
+            ImVec4_c hov = recruit_opts[r].color;
+            hov.x *= 1.2f; hov.y *= 1.2f; hov.z *= 1.2f;
+            if (hov.x > 1.0f) hov.x = 1.0f;
+            if (hov.y > 1.0f) hov.y = 1.0f;
+            if (hov.z > 1.0f) hov.z = 1.0f;
+            igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, hov);
+            if (igButton(recruit_opts[r].name, (ImVec2_c){-1, 40})) {
+                u32 idx = app->progression.num_squad;
+                app->progression.squad_roles[idx] = recruit_opts[r].role;
+                memset(app->progression.stat_levels[idx], 0, sizeof(app->progression.stat_levels[idx]));
+                app->progression.num_squad++;
+                app->recruiting = false;
+                app->upgrading = true;
+                // Re-init game with new roster
+                g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                            app->progression.squad_roles, app->progression.num_squad,
+                            app->progression.stat_levels);
+            }
+            igPopStyleColor(2);
+            igPopID();
+        }
+
+        igEnd();
+    }
+
     // ---- Upgrade screen modal ----
     if (app->upgrading) {
-        static const char *role_names[] = { "Knight", "Ranger", "Cleric", "Sorcerer" };
-        // Per-role stat names with adventurous labels
-        static const char *stat_names[MAX_SQUAD][4] = {
-            { "Vitality", "Might",     "Armor",  "Swiftness" },  // Knight
-            { "Vitality", "Precision",  "Reach",  "Swiftness" },  // Ranger
-            { "Vitality", "Mending",   "Reach",  "Swiftness" },  // Cleric
-            { "Vitality", "Sorcery",   "Reach",  "Swiftness" },  // Sorcerer
+        static const char *stat_names_by_role[][4] = {
+            [ROLE_MELEE]  = { "Vitality", "Might",     "Armor",  "Swiftness" },
+            [ROLE_ARCHER] = { "Vitality", "Precision",  "Reach",  "Swiftness" },
+            [ROLE_HEALER] = { "Vitality", "Mending",   "Reach",  "Swiftness" },
+            [ROLE_MAGE]   = { "Vitality", "Sorcery",   "Reach",  "Swiftness" },
+        };
+        static const char *role_display[] = {
+            [ROLE_MELEE]  = "Knight",
+            [ROLE_ARCHER] = "Ranger",
+            [ROLE_HEALER] = "Cleric",
+            [ROLE_MAGE]   = "Sorcerer",
         };
 
         ImVec2_c center = {(float)win_w * 0.5f, (float)win_h * 0.5f};
@@ -610,15 +691,19 @@ void app_render(App *app) {
         igText("Glory: %u  (Lifetime: %u)", app->progression.xp, app->progression.total_xp);
         igSeparator();
 
-        for (u32 i = 0; i < MAX_SQUAD; i++) {
+        u32 nsq = app->progression.num_squad;
+        for (u32 i = 0; i < nsq; i++) {
             igPushID_Int((int)i);
-            igText("%s", role_names[i]);
+            UnitRole role = app->progression.squad_roles[i];
+            const char *rname = (role < ROLE_COUNT && role_display[role]) ? role_display[role] : "???";
+            const char *const *snames = (role < ROLE_COUNT && stat_names_by_role[role][0]) ? stat_names_by_role[role] : stat_names_by_role[ROLE_MELEE];
+            igText("%s", rname);
 
             for (u32 s = 0; s < 4; s++) {
                 igPushID_Int((int)s);
                 u32 lvl = app->progression.stat_levels[i][s];
                 u32 cost = 15 * (lvl + 1);
-                igText("  %s Lv.%u", stat_names[i][s], lvl);
+                igText("  %s Lv.%u", snames[s], lvl);
                 igSameLine(0, 8);
                 bool can_buy = app->progression.xp >= cost;
                 if (!can_buy) igBeginDisabled(true);
@@ -632,7 +717,7 @@ void app_render(App *app) {
                 igPopID();
             }
 
-            if (i < MAX_SQUAD - 1) igSeparator();
+            if (i < nsq - 1) igSeparator();
             igPopID();
         }
 
@@ -641,7 +726,9 @@ void app_render(App *app) {
         if (igButton("March Forth!", (ImVec2_c){-1, 32})) {
             app->upgrading = false;
             // Re-init game with updated stat levels
-            g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+            g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                        app->progression.squad_roles, app->progression.num_squad,
+                        app->progression.stat_levels);
             // Fade in from black
             app->fade_alpha = 1.0f;
             app->fade_target = 0.0f;
@@ -721,7 +808,9 @@ void app_render(App *app) {
             app->map_texture = NULL;
         }
         mg_upload_texture(&app->map, app->renderer, &app->map_texture);
-        g_game_init(&app->game, app->renderer, &app->map.graph, app->level, app->progression.stat_levels);
+        g_game_init(&app->game, app->renderer, &app->map.graph, app->level,
+                    app->progression.squad_roles, app->progression.num_squad,
+                    app->progression.stat_levels);
     }
 
     // Fade overlay (rendered before ImGui so modals appear on top)

@@ -41,6 +41,7 @@ void g_unit_init_player(Unit *unit, const TerrainGrid *tg, const MapGraph *graph
 }
 
 void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
+                       const UnitRole *squad_roles, u32 num_squad,
                        const u32 stat_levels[][4]) {
     typedef struct {
         UnitRole role;
@@ -50,44 +51,47 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
         f32 armor;
     } SquadDef;
 
-    static const SquadDef defs[MAX_SQUAD] = {
+    static const SquadDef all_defs[] = {
         { ROLE_MELEE,  220, 60,  60,  0.075f, 120.0f, 4.0f },
         { ROLE_ARCHER,  60, 180, 60,  0.08f,   80.0f, 1.0f },
         { ROLE_HEALER, 240, 220, 60,  0.07f,   90.0f, 1.0f },
         { ROLE_MAGE,    80, 120, 240, 0.07f,  70.0f, 0.0f },
     };
+    static const u32 num_defs = sizeof(all_defs) / sizeof(all_defs[0]);
 
-    static const Vec2 offsets[MAX_SQUAD] = {
-        { -0.01f, -0.01f },
-        {  0.01f, -0.01f },
-        { -0.01f,  0.01f },
-        {  0.01f,  0.01f },
-    };
+    if (num_squad > MAX_SQUAD) num_squad = MAX_SQUAD;
+    gs->num_squad = num_squad;
 
-    gs->num_squad = MAX_SQUAD;
+    for (u32 i = 0; i < num_squad; i++) {
+        UnitRole role = squad_roles[i];
 
-    for (u32 i = 0; i < MAX_SQUAD; i++) {
+        // Find the def for this role
+        const SquadDef *def = &all_defs[0]; // fallback
+        for (u32 d = 0; d < num_defs; d++) {
+            if (all_defs[d].role == role) { def = &all_defs[d]; break; }
+        }
+
         Unit *u = &gs->squad[i];
         *u = (Unit){0};
         u->alive = true;
-        u->role = defs[i].role;
+        u->role = role;
         u->team = TEAM_PLAYER;
         u->state = STATE_FOLLOW;
-        u->speed = defs[i].speed;
-        u->hp = defs[i].hp;
-        u->max_hp = defs[i].hp;
+        u->speed = def->speed;
+        u->hp = def->hp;
+        u->max_hp = def->hp;
         u->damage = 10.0f;
-        u->attack_range = (defs[i].role == ROLE_HEALER) ? 0.08f
-                        : (defs[i].role == ROLE_ARCHER) ? 0.07f
-                        : (defs[i].role == ROLE_MAGE)   ? 0.06f
+        u->attack_range = (role == ROLE_HEALER) ? 0.08f
+                        : (role == ROLE_ARCHER) ? 0.07f
+                        : (role == ROLE_MAGE)   ? 0.06f
                         : 0.015f;
         u->cooldown = 0.8f;
         u->cooldown_timer = 0.0f;
-        u->armor = defs[i].armor;
+        u->armor = def->armor;
         u->radius = 0.005f;
-        u->color[0] = defs[i].r;
-        u->color[1] = defs[i].g;
-        u->color[2] = defs[i].b;
+        u->color[0] = def->r;
+        u->color[1] = def->g;
+        u->color[2] = def->b;
         u->color[3] = 255;
 
         // Default boid weights
@@ -109,7 +113,7 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
             u->max_hp *= (1.0f + 0.10f * stat_levels[i][0]);
             u->hp      = u->max_hp;
             u->damage *= (1.0f + 0.10f * stat_levels[i][1]);
-            if (defs[i].role == ROLE_MELEE) {
+            if (role == ROLE_MELEE) {
                 u->armor += 1.0f * stat_levels[i][2]; // +1 armor per level
             } else {
                 u->attack_range *= (1.0f + 0.08f * stat_levels[i][2]);
@@ -117,8 +121,10 @@ void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *gra
             u->cooldown *= (1.0f - 0.05f * stat_levels[i][3]);
         }
 
-        // Spawn near player
-        Vec2 spawn = vec2_add(gs->player.pos, offsets[i]);
+        // Spawn near player in a circle
+        f32 angle = 2.0f * PI_F * (f32)i / (f32)num_squad;
+        Vec2 offset = { cosf(angle) * 0.01f, sinf(angle) * 0.01f };
+        Vec2 spawn = vec2_add(gs->player.pos, offset);
         u->pos = g_unit_move_with_terrain(gs->player.pos, spawn, tg, graph, true);
     }
 }

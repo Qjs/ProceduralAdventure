@@ -308,7 +308,8 @@ static void update_environment_effect(GameState *gs, const TerrainGrid *tg,
 }
 
 void g_game_init(Game *game, SDL_Renderer *renderer, const MapGraph *graph,
-                 u32 level, const u32 stat_levels[][4]) {
+                 u32 level, const UnitRole *squad_roles, u32 num_squad,
+                 const u32 stat_levels[][4]) {
     // Free old terrain if reinitializing
     if (game->state.terrain_ready) {
         g_terrain_free(&game->terrain);
@@ -334,13 +335,13 @@ void g_game_init(Game *game, SDL_Renderer *renderer, const MapGraph *graph,
     // Sum total player upgrades for enemy scaling
     u32 total_upgrades = 0;
     if (stat_levels) {
-        for (u32 i = 0; i < MAX_SQUAD; i++)
+        for (u32 i = 0; i < num_squad; i++)
             for (u32 s = 0; s < 4; s++)
                 total_upgrades += stat_levels[i][s];
     }
 
     g_unit_init_player(&game->state.player, &game->terrain, graph);
-    g_unit_init_squad(&game->state, &game->terrain, graph, stat_levels);
+    g_unit_init_squad(&game->state, &game->terrain, graph, squad_roles, num_squad, stat_levels);
     game->state.is_boss_level = ((level + 1) % 5) == 0;
 
     // Initialize camera centered on player

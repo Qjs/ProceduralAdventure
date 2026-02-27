@@ -33,7 +33,7 @@ static inline f32 angle_lerp(f32 from, f32 to, f32 t) {
 
 /* ---- Game constants ---- */
 
-#define MAX_SQUAD     4
+#define MAX_SQUAD     8
 #define MAX_ENEMIES   64
 #define MAX_PROJECTILES 128
 #define MAX_CAMPS     16

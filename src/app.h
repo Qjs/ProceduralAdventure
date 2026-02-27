@@ -12,6 +12,8 @@ typedef struct {
     u32 total_xp;                   // lifetime earned (for display)
     u32 stat_levels[MAX_SQUAD][4];  // [unit][stat] upgrade counts
     // stat indices: 0=HP, 1=Damage, 2=Range, 3=Cooldown
+    UnitRole squad_roles[MAX_SQUAD]; // role of each squad member
+    u32 num_squad;                   // current party size (starts at 4, caps at MAX_SQUAD)
 } Progression;
 
 typedef struct {
@@ -27,6 +29,7 @@ typedef struct {
     u32           level;
     Progression   progression;
     bool          upgrading;
+    bool          recruiting;
     bool          show_intro;
     bool          paused;
     bool          game_over;

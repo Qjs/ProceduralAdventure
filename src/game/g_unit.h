@@ -8,8 +8,9 @@
 // Initialize the player unit, spawning at map center (nearest land cell)
 void g_unit_init_player(Unit *unit, const TerrainGrid *tg, const MapGraph *graph);
 
-// Initialize the 4 squad companions near the player (with upgrade multipliers)
+// Initialize squad companions near the player (with upgrade multipliers)
 void g_unit_init_squad(GameState *gs, const TerrainGrid *tg, const MapGraph *graph,
+                       const UnitRole *squad_roles, u32 num_squad,
                        const u32 stat_levels[][4]);
 
 // Shared terrain-aware movement: clamps to [0,1]², blocks water with axis-sliding
